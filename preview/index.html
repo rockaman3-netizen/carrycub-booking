@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0b1b3f">
+<title>CarryCub Mini Truck Booking (Preview)</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<style>
+  :root { --brand:#f97316; --brand-dark:#ea580c; --navy:#0b1b3f; --line:#e5e7eb; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; background:#f3f4f6; color:#111827; font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  .app { max-width:448px; min-height:100dvh; margin:0 auto; background:#f3f4f6; display:flex; flex-direction:column; box-shadow:0 1px 3px rgba(0,0,0,.1); }
+
+  .hero { position:relative; overflow:hidden; padding:40px 24px 40px; background:linear-gradient(135deg,#fff7ed,#fff 50%,#f0f9ff); }
+  .hero .truck { position:absolute; right:-4px; top:28px; font-size:84px; line-height:1; opacity:.9; pointer-events:none; }
+  .hero h1 { position:relative; margin:0; font-size:26px; line-height:1.15; font-weight:800; color:var(--navy); }
+  .hero h1 span { display:block; color:var(--brand); }
+  .hero h1 span.t1 { color:var(--navy); }
+  .pill { position:relative; display:inline-block; margin-top:16px; padding:6px 16px; border:1px solid rgba(11,27,63,.2); border-radius:999px; background:rgba(255,255,255,.7); color:var(--navy); font-size:12px; font-weight:500; text-decoration:none; }
+  .hero p { position:relative; margin:8px 0 0; max-width:190px; font-size:13px; color:#6b7280; }
+
+  .wrap { flex:1; display:flex; flex-direction:column; padding:0 12px; background:linear-gradient(#0b1b3f 0 64px,#f3f4f6 64px); }
+  .card { margin-top:-16px; flex:1; display:flex; flex-direction:column; background:#fff; border-radius:24px 24px 0 0; box-shadow:0 1px 2px rgba(0,0,0,.06); }
+  form { flex:1; display:flex; flex-direction:column; }
+  .body { flex:1; padding:32px 24px 0; }
+
+  .row { position:relative; padding-left:36px; }
+  .dot { position:absolute; left:0; top:2px; width:20px; height:20px; border-radius:50%; }
+  .dash { position:absolute; left:9px; top:28px; bottom:-32px; border-left:2px dashed #d1d5db; }
+  .lbl { display:block; font-size:14px; font-weight:500; color:#6b7280; }
+  input, textarea { width:100%; font:inherit; font-size:16px; padding:10px 0; border:0; border-bottom:2px solid var(--line); background:transparent; outline:none; }
+  input:focus, textarea:focus { border-bottom-color:var(--brand); }
+  input::placeholder, textarea::placeholder { color:#9ca3af; }
+  .line { display:flex; align-items:center; gap:12px; }
+  .gps { flex:none; width:40px; height:40px; border-radius:50%; border:0; background:#f3f4f6; color:#4b5563; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+  .gps.busy { opacity:.5; }
+  .gps:active { background:#e5e7eb; }
+  .notice { margin:12px 0 0; padding:12px 16px; border-radius:16px; background:#fef2f2; color:#b91c1c; font-size:14px; }
+  .err { display:block; margin-top:4px; font-size:14px; color:#dc2626; }
+  .note { margin:24px 0 0; font-size:12px; color:#9ca3af; }
+
+  .map { position:relative; margin-top:20px; height:176px; border-radius:16px; border:1px solid #e5e7eb; overflow:hidden; display:flex; align-items:center; justify-content:center;
+    background:repeating-linear-gradient(35deg,#f4f0e9 0 14px,#ece7dd 14px 16px),#f4f0e9; }
+  .map span { max-width:210px; padding:12px 20px; border-radius:999px; background:rgba(255,255,255,.95); box-shadow:0 1px 4px rgba(0,0,0,.15); text-align:center; font-size:12px; color:var(--navy); }
+
+  .sec { margin-top:40px; }
+  .sec h3 { margin:0 0 12px; font-size:14px; font-weight:500; color:#6b7280; }
+  .list { display:flex; flex-direction:column; gap:10px; }
+  .veh { display:flex; align-items:center; gap:12px; text-align:left; padding:12px 16px; border:1px solid var(--line); border-radius:16px; background:#fff; font:inherit; cursor:pointer; }
+  .veh.sel { border-color:var(--brand); background:#fff7ed; }
+  .veh .em { font-size:24px; }
+  .veh .tx { flex:1; }
+  .veh .nm { display:block; font-size:14px; font-weight:600; color:var(--navy); }
+  .veh .sz { display:block; font-size:12px; color:#6b7280; }
+  .veh .rd { width:20px; height:20px; border-radius:50%; border:2px solid #d1d5db; }
+  .veh.sel .rd { border-color:var(--brand); background:var(--brand); box-shadow:inset 0 0 0 3px #fff7ed; }
+
+  .cust { margin-top:40px; padding-bottom:40px; display:flex; flex-direction:column; gap:28px; }
+  .cc { display:flex; align-items:center; gap:8px; }
+  .cc b { font-weight:400; font-size:16px; color:#6b7280; padding:10px 0; border-bottom:2px solid var(--line); }
+
+  .foot { position:sticky; bottom:0; background:#fff; border-top:1px solid #f3f4f6; padding:16px; }
+  .btn { width:100%; border:0; border-radius:16px; background:var(--brand); color:#fff; font:inherit; font-size:16px; font-weight:600; padding:14px; cursor:pointer; }
+  .btn:active { background:var(--brand-dark); }
+
+
+  /* status page */
+  .status { padding:32px 24px; }
+  .idrow { display:flex; justify-content:space-between; font-size:14px; color:#6b7280; }
+  .idrow b { color:var(--navy); letter-spacing:.06em; font-weight:600; }
+  .now { margin-top:20px; border-radius:24px; padding:32px 20px; text-align:center; background:#fff7ed; }
+  .now.green { background:#f0fdf4; } .now.red { background:#fef2f2; }
+  .now h2 { margin:16px 0 0; font-size:18px; color:var(--navy); }
+  .now p { margin:4px 0 0; font-size:14px; color:#4b5563; }
+  .ring { position:relative; width:80px; height:80px; margin:0 auto; display:flex; align-items:center; justify-content:center; }
+  .ring .pulse { position:absolute; inset:0; border-radius:50%; background:rgba(249,115,22,.25); animation:ping 1.4s cubic-bezier(0,0,.2,1) infinite; }
+  .ring .ic { position:relative; width:64px; height:64px; border-radius:50%; background:#fff; display:flex; align-items:center; justify-content:center; font-size:30px; box-shadow:0 1px 2px rgba(0,0,0,.08); }
+  @keyframes ping { 75%,100% { transform:scale(1.8); opacity:0; } }
+  .drv { display:flex; align-items:center; gap:12px; border:1px solid #e5e7eb; border-radius:16px; padding:12px 16px; }
+  .drv .av { width:44px; height:44px; border-radius:50%; background:#f3f4f6; display:flex; align-items:center; justify-content:center; font-size:20px; }
+  .drv .tx { flex:1; } .drv b { display:block; font-size:14px; color:var(--navy); } .drv small { color:#6b7280; font-size:12px; }
+  .drv em { font-style:normal; font-size:10px; font-weight:500; color:#6b7280; background:#f3f4f6; border-radius:999px; padding:2px 8px; }
+  .contact-actions { display:flex; gap:8px; margin-top:10px; }
+  .contact-actions .cbtn { flex:1; text-align:center; padding:10px 0; border-radius:12px; font-size:13px; font-weight:600; text-decoration:none; }
+  .contact-actions .call { background:var(--brand); color:#fff; }
+  .contact-actions .wa { border:1px solid #22c55e; color:#16a34a; background:#fff; }
+  .tl { list-style:none; margin:32px 0 0; padding:0; }
+  .tl li { position:relative; display:flex; align-items:flex-start; gap:16px; padding-bottom:24px; }
+  .tl li:last-child { padding-bottom:0; }
+  .tl .ln { position:absolute; left:11px; top:24px; bottom:0; width:2px; background:#e5e7eb; }
+  .tl .ln.on { background:var(--brand); }
+  .tl .cd { position:relative; z-index:1; flex:none; width:24px; height:24px; border-radius:50%; border:2px solid #e5e7eb; background:#fff; display:flex; align-items:center; justify-content:center; font-size:12px; }
+  .tl .cd.done { background:var(--brand); border-color:var(--brand); color:#fff; }
+  .tl .cd.cur { border-color:var(--brand); } .tl .cd.cur i { width:10px; height:10px; border-radius:50%; background:var(--brand); }
+  .tl span.t { padding-top:2px; font-size:14px; color:#9ca3af; }
+  .tl span.t.done { color:#4b5563; } .tl span.t.cur { color:var(--navy); font-weight:600; }
+  .det { margin-top:32px; border:1px solid #e5e7eb; border-radius:16px; padding:16px; font-size:14px; display:flex; flex-direction:column; gap:12px; }
+  .det div { display:flex; justify-content:space-between; gap:16px; } .det span { color:#6b7280; } .det b { font-weight:500; text-align:right; }
+  .cancel { margin-top:24px; width:100%; padding:12px; border:1px solid #fecaca; border-radius:16px; background:#fff; color:#dc2626; font:inherit; font-size:14px; font-weight:500; cursor:pointer; }
+  .sure { margin-top:24px; background:#fef2f2; border-radius:16px; padding:16px; text-align:center; font-size:14px; color:#b91c1c; }
+  .sure div { display:flex; gap:12px; margin-top:12px; }
+  .sure button { flex:1; border:0; border-radius:12px; padding:10px; font:inherit; font-size:14px; font-weight:500; cursor:pointer; }
+  .sure .keep { background:#fff; color:#374151; } .sure .yes { background:#dc2626; color:#fff; }
+  .newb { margin-top:24px; }
+  .test { margin-top:40px; border:1px dashed #d1d5db; border-radius:16px; padding:16px; }
+  .test small { display:block; font-size:12px; font-weight:500; letter-spacing:.05em; text-transform:uppercase; color:#9ca3af; }
+  .test p { margin:4px 0 0; font-size:12px; color:#6b7280; }
+  .test button { border-radius:12px; padding:10px 16px; font:inherit; font-size:14px; font-weight:500; cursor:pointer; }
+  .test .nx { width:100%; margin-top:12px; border:0; background:var(--navy); color:#fff; } .test .nx:disabled { opacity:.3; cursor:default; }
+  .lookup { padding:32px 24px 40px; }
+  .idin { text-transform:uppercase; letter-spacing:.06em; }
+  .idin::placeholder { text-transform:none; letter-spacing:0; }
+  .rechd { margin:40px 0 12px; font-size:14px; font-weight:500; color:#6b7280; }
+  .recrow { display:flex; align-items:center; justify-content:space-between; width:100%; margin-bottom:10px; padding:12px 16px; border:1px solid #e5e7eb; border-radius:16px; background:#fff; font:inherit; cursor:pointer; text-align:left; }
+  .recrow b { font-size:14px; letter-spacing:.06em; color:var(--navy); } .recrow span { font-size:12px; color:#6b7280; }
+  .blk { margin-top:24px; }
+  .blk > small { display:block; margin-bottom:12px; font-size:14px; font-weight:500; color:#6b7280; }
+  .tmap { position:relative; height:176px; border-radius:16px; border:1px solid #e5e7eb; overflow:hidden; background:repeating-linear-gradient(35deg,#f4f0e9 0 14px,#ece7dd 14px 16px),#f4f0e9; }
+  .tmap svg { position:absolute; inset:0; width:100%; height:100%; }
+  .tmap .pin { position:absolute; display:flex; align-items:center; gap:6px; transform:translate(-50%,-50%); }
+  .tmap .pin i { width:14px; height:14px; border-radius:50%; box-shadow:0 0 0 4px #fff; }
+  .tmap .pin em { font-style:normal; font-size:10px; font-weight:500; color:var(--navy); background:rgba(255,255,255,.9); border-radius:4px; padding:2px 6px; }
+  .tmap .soon { position:absolute; bottom:12px; left:50%; transform:translateX(-50%); white-space:nowrap; padding:8px 16px; border-radius:999px; background:rgba(255,255,255,.95); box-shadow:0 1px 4px rgba(0,0,0,.15); font-size:12px; color:var(--navy); }
+  .rmap { position:relative; height:224px; border-radius:16px; border:1px solid #e5e7eb; overflow:hidden; }
+  .rmap .leaflet-container { height:100%; width:100%; background:#f4f0e9; }
+  .rmap .note { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:0 24px; font-size:12px; color:#6b7280; background:rgba(255,255,255,.85); pointer-events:none; z-index:500; }
+  @keyframes ccpulse { 0% { transform:scale(.6); opacity:.6; } 70% { transform:scale(2); opacity:0; } 100% { opacity:0; } }
+  .gpsdrv { width:100%; margin-top:10px; padding:12px; border:1px solid #e5e7eb; border-radius:12px; background:#fff; color:var(--navy); font:inherit; font-size:13px; font-weight:600; cursor:pointer; }
+  .gpsdrv:active { background:#f9fafb; }
+  .gpsdrv:disabled { opacity:.5; }
+  .gpsnote { margin:8px 0 0; font-size:12px; color:#6b7280; }
+  .nodrv { margin:0; padding:16px; border:1px dashed #e5e7eb; border-radius:16px; font-size:14px; color:#9ca3af; }
+  .nf { text-align:center; padding:48px 24px; }
+  .nf .ic { width:64px; height:64px; margin:0 auto; border-radius:50%; background:#f3f4f6; display:flex; align-items:center; justify-content:center; font-size:30px; }
+  .nf h2 { margin:16px 0 0; font-size:18px; color:var(--navy); } .nf p { margin:4px 0 0; font-size:14px; color:#6b7280; }
+  .nf a { display:block; margin-top:24px; padding:14px; border-radius:16px; background:var(--brand); color:#fff; font-weight:600; text-decoration:none; }
+
+  .adminlink { padding:0 24px 24px; text-align:center; }
+  .adminlink a { font-size:12px; color:#9ca3af; text-decoration:none; }
+  .navybtn { background:var(--navy) !important; }
+  .navybtn:active { background:#132658 !important; }
+  .hint { margin-top:16px; text-align:center; font-size:12px; color:#9ca3af; }
+  .hint code { font-family:monospace; }
+  .abar { display:flex; align-items:center; justify-content:space-between; padding:16px 20px; background:var(--navy); color:#fff; }
+  .abar b { font-size:14px; font-weight:700; letter-spacing:.02em; }
+  .abar button { border:0; background:transparent; color:rgba(255,255,255,.7); font:inherit; font-size:12px; cursor:pointer; }
+  .adm { padding:20px; }
+  .adm h1 { margin:0; font-size:18px; color:var(--navy); }
+  .adm .sub { margin:2px 0 0; font-size:12px; color:#9ca3af; }
+  .kpis { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-top:16px; }
+  .kpi { display:block; text-align:center; padding:14px 8px; border:1px solid #e5e7eb; border-radius:16px; background:#fff; text-decoration:none; }
+  .kpi b { display:block; font-size:22px; color:var(--navy); } .kpi span { display:block; margin-top:4px; font-size:10px; line-height:1.2; color:#6b7280; }
+  .drow { display:flex; align-items:center; justify-content:space-between; margin-top:10px; padding:12px 16px; border:1px solid #e5e7eb; border-radius:16px; background:#fff; text-decoration:none; }
+  .drow div b { display:block; font-size:14px; color:var(--navy); } .drow div small { font-size:11px; color:#6b7280; }
+  .drow a.mng { font-size:12px; font-weight:500; color:var(--brand-dark); text-decoration:none; }
+  .sechd { display:flex; align-items:center; justify-content:space-between; margin-top:28px; }
+  .sechd h2 { margin:0; font-size:14px; font-weight:600; color:var(--navy); } .sechd a { font-size:12px; font-weight:500; color:var(--brand-dark); text-decoration:none; }
+  .empty { margin-top:12px; padding:28px 16px; text-align:center; border:1px dashed #e5e7eb; border-radius:16px; color:#9ca3af; font-size:13px; }
+  .brow { display:block; margin-top:10px; padding:14px 16px; border:1px solid #e5e7eb; border-radius:16px; background:#fff; text-decoration:none; }
+  .brow .top { display:flex; align-items:center; justify-content:space-between; }
+  .brow .top b { font-size:14px; letter-spacing:.03em; color:var(--navy); }
+  .pill { display:inline-block; white-space:nowrap; padding:4px 10px; border-radius:999px; font-size:10px; font-weight:600; }
+  .brow .route { margin:6px 0 0; font-size:12px; color:#6b7280; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .brow .meta { display:flex; justify-content:space-between; margin-top:6px; font-size:11px; color:#9ca3af; }
+  .tabs { display:flex; gap:8px; margin-top:4px; }
+  .tabs a { flex:1; text-align:center; padding:8px; border-radius:12px; font-size:12px; font-weight:600; text-decoration:none; border:1px solid #e5e7eb; color:#6b7280; background:#fff; }
+  .tabs a.on { background:var(--navy); color:#fff; border-color:var(--navy); }
+  .backlink { font-size:12px; color:#6b7280; text-decoration:none; }
+  .dhead { display:flex; align-items:center; justify-content:space-between; margin-top:12px; }
+  .dhead h1 { margin:0; font-size:16px; letter-spacing:.03em; color:var(--navy); }
+  .booked { margin:2px 0 0; font-size:11px; color:#9ca3af; }
+  .block { margin-top:16px; padding:14px 16px; border:1px solid #e5e7eb; border-radius:16px; background:#fff; font-size:14px; display:flex; flex-direction:column; gap:10px; }
+  .block .kv { display:flex; justify-content:space-between; gap:12px; } .block .kv span { color:#6b7280; } .block .kv b { text-align:right; font-weight:500; }
+  .block .kv a { text-align:right; font-weight:500; color:var(--brand-dark); text-decoration:none; }
+  .dh2 { margin:20px 0 8px; font-size:14px; font-weight:600; color:var(--navy); }
+  .driverpick { display:flex; align-items:center; gap:12px; padding:12px 14px; border:1px solid #e5e7eb; border-radius:16px; background:#fff; margin-top:8px; cursor:pointer; }
+  .driverpick.sel { border-color:var(--brand); background:#fff7ed; }
+  .driverpick .av2 { width:38px; height:38px; border-radius:50%; background:#f3f4f6; display:flex; align-items:center; justify-content:center; font-size:16px; }
+  .driverpick .tx2 { flex:1; } .driverpick .tx2 b { display:block; font-size:14px; color:var(--navy); } .driverpick .tx2 small { font-size:11px; color:#6b7280; }
+  .driverpick .rd2 { width:18px; height:18px; border-radius:50%; border:2px solid #d1d5db; }
+  .driverpick.sel .rd2 { border-color:var(--brand); background:var(--brand); }
+  .assignbtn { width:100%; margin-top:6px; padding:12px; border:0; border-radius:12px; background:var(--brand); color:#fff; font:inherit; font-size:14px; font-weight:600; cursor:pointer; }
+  .assignbtn:disabled { opacity:.3; }
+  .curdrv { display:flex; align-items:center; gap:12px; padding:12px 14px; border:1px solid #e5e7eb; border-radius:16px; background:#fff; margin-top:8px; }
+  .curdrv .tx2 { flex:1; } .curdrv b { display:block; font-size:14px; color:var(--navy); } .curdrv small { font-size:11px; color:#6b7280; }
+  .curdrv a { padding:6px 12px; border-radius:999px; background:#f3f4f6; color:var(--navy); font-size:11px; font-weight:500; text-decoration:none; }
+  .statusgrid { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+  .stbtn { padding:6px 12px; border-radius:999px; border:1px solid #e5e7eb; background:#fff; color:#4b5563; font:inherit; font-size:11px; font-weight:500; cursor:pointer; }
+  .stbtn.on { background:var(--navy); border-color:var(--navy); color:#fff; }
+  .stbtn:disabled { cursor:default; }
+  .aerr { margin-top:8px; font-size:13px; color:#dc2626; }
+  .dcard { display:flex; align-items:center; gap:12px; margin-top:10px; padding:12px 14px; border:1px solid #e5e7eb; border-radius:16px; background:#fff; }
+  .dcard .tx3 { flex:1; } .dcard b { display:block; font-size:14px; color:var(--navy); } .dcard small { display:block; font-size:11px; color:#6b7280; }
+  .toggle { border:0; border-radius:999px; padding:6px 12px; font:inherit; font-size:11px; font-weight:600; cursor:pointer; }
+  .toggle.on { background:#dcfce7; color:#15803d; } .toggle.off { background:#f3f4f6; color:#6b7280; }
+  .hidden { display:none !important; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="abar hidden" id="abar"><b id="abarLabel"><a href="#/admin" style="color:#fff;text-decoration:none">CarryCub Admin</a></b><button id="abarLogout" data-logout>Log out</button></div>
+  <header class="hero">
+    <div class="truck">🚚</div>
+    <h1><span class="t1" id="hTitle">Mini Truck</span><span id="hAccent">Booking</span></h1>
+    <p id="hSub">Fast local goods transport in Jamshedpur</p>
+    <a class="pill" id="hAction" href="#/track">Track booking</a>
+  </header>
+
+  <div class="wrap"><div class="card">
+    <form id="form" novalidate>
+      <div class="body">
+        <div class="row">
+          <span class="dot" style="background:var(--brand)"></span><span class="dash"></span>
+          <span class="lbl">Pickup location</span>
+          <div class="line">
+            <input id="pickup" placeholder="Search address or use GPS" autocomplete="off">
+            <button class="gps" id="gps" type="button" aria-label="Use current location"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
+          </div>
+          <span class="err" id="e-pickup"></span>
+          <p class="notice hidden" id="gpsErr"></p>
+        </div>
+
+        <div class="row" style="margin-top:24px">
+          <span class="dot" style="background:var(--navy)"></span>
+          <span class="lbl">Drop location</span>
+          <input id="drop" placeholder="Enter drop location" autocomplete="off">
+          <span class="err" id="e-drop"></span>
+        </div>
+
+        <p class="note">Currently serving Jamshedpur &amp; Adityapur only</p>
+        <div class="map"><span>Select pickup and drop to see your route</span></div>
+
+        <div class="sec">
+          <h3>Vehicle type</h3>
+          <div class="list" id="vehicles"></div>
+          <span class="err" id="e-vehicle"></span>
+        </div>
+
+        <div class="cust">
+          <div><span class="lbl">Your name</span>
+            <input id="name" placeholder="Full name" autocomplete="name"><span class="err" id="e-name"></span></div>
+          <div><span class="lbl">Mobile number</span>
+            <div class="cc"><b>+91</b><input id="mobile" type="tel" inputmode="numeric" maxlength="10" placeholder="10-digit number" autocomplete="tel-national"></div>
+            <span class="err" id="e-mobile"></span></div>
+          <div><span class="lbl">Notes (optional)</span>
+            <textarea id="notes" rows="2" placeholder="Floor, lift, items, landmark..."></textarea></div>
+        </div>
+      </div>
+      <div class="foot"><button class="btn" type="submit">Book Now</button></div>
+    </form>
+    <div class="adminlink"><a href="#/admin/login">Admin panel</a> <span style="color:#d1d5db">·</span> <a href="#/driver/login">Driver panel</a></div>
+
+    <section class="lookup hidden" id="lookup">
+      <label class="lbl" for="lid">Booking ID</label>
+      <input id="lid" class="idin" placeholder="CC-260922-K7QM" autocomplete="off" autocapitalize="characters">
+      <span class="err" id="e-lid"></span>
+      <button class="btn" id="lgo" type="button" style="margin-top:32px">Track booking</button>
+      <div id="recent"></div>
+    </section>
+    <section class="status hidden" id="status"></section>
+
+    <!-- Admin -->
+    <section class="admin hidden" id="adminLogin">
+      <label class="lbl" for="apw">Password</label>
+      <input id="apw" type="password" class="idin" placeholder="Enter admin password" autocomplete="off" style="text-transform:none;letter-spacing:0">
+      <span class="err" id="e-apw"></span>
+      <button class="btn navybtn" id="aLoginBtn" type="button" style="margin-top:32px">Log in</button>
+      <p class="hint">Test password: <code>admin123</code></p>
+    </section>
+
+    <section class="admin hidden" id="adminDash"></section>
+    <section class="admin hidden" id="adminList"></section>
+    <section class="admin hidden" id="adminDetail"></section>
+    <section class="admin hidden" id="adminDrivers"></section>
+
+    <!-- Driver -->
+    <section class="admin hidden" id="driverLogin">
+      <label class="lbl" for="dph">Mobile number</label>
+      <input id="dph" class="idin" placeholder="10-digit number" inputmode="numeric" maxlength="10" autocomplete="off" style="text-transform:none;letter-spacing:0">
+      <span class="err" id="e-dph"></span>
+      <button class="btn navybtn" id="dLoginBtn" type="button" style="margin-top:32px">Log in</button>
+      <p class="hint" id="dHint"></p>
+    </section>
+    <section class="admin hidden" id="driverDash"></section>
+    <section class="admin hidden" id="driverDetail"></section>
+
+  </div></div>
+</div>
+
+<script>
+const VEHICLES = [
+  { id:"3-wheeler-tempo", name:"3 Wheeler Tempo", size:"Small loads", em:"🛺" },
+  { id:"tata-ace-7ft", name:"Tata Ace 7 ft", size:"7 ft body", em:"🛻" },
+  { id:"9-ft-pickup", name:"9 ft Pickup", size:"9 ft body", em:"🛻" },
+  { id:"10-ft-pickup", name:"10 ft Pickup", size:"10 ft body", em:"🛻" },
+  { id:"14-ft-lpt", name:"14 ft LPT", size:"14 ft body · heavy loads", em:"🚛" }
+];
+const $ = id => document.getElementById(id);
+let vehicleId = "";
+
+function renderVehicles() {
+  $("vehicles").innerHTML = "";
+  VEHICLES.forEach(v => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "veh" + (v.id === vehicleId ? " sel" : "");
+    b.innerHTML = '<span class="em">'+v.em+'</span><span class="tx"><span class="nm">'+v.name+'</span><span class="sz">'+v.size+'</span></span><span class="rd"></span>';
+    b.onclick = () => { vehicleId = v.id; $("e-vehicle").textContent = ""; renderVehicles(); };
+    $("vehicles").appendChild(b);
+  });
+}
+
+function bookingId() {
+  const d = new Date(), p = n => String(n).padStart(2, "0");
+  const a = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let s = "";
+  for (let i = 0; i < 4; i++) s += a[Math.floor(Math.random() * a.length)];
+  return "CC-" + String(d.getFullYear()).slice(-2) + p(d.getMonth() + 1) + p(d.getDate()) + "-" + s;
+}
+function esc(t) {
+  return String(t).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+}
+// Contact actions (Call / WhatsApp). The phone number itself is never printed
+// as text on the page — it's only ever used as the tel:/wa.me link target.
+function contactActions(phone, callLabel, waMessage) {
+  const digits = String(phone).replace(/\D/g, "");
+  if (digits.length < 10) return "";
+  const e164 = "+91" + digits.slice(-10);
+  const waUrl = "https://wa.me/91" + digits.slice(-10) + (waMessage ? "?text=" + encodeURIComponent(waMessage) : "");
+  return '<div class="contact-actions">' +
+    '<a class="cbtn call" href="tel:' + e164 + '">📞 ' + esc(callLabel || "Call") + '</a>' +
+    '<a class="cbtn wa" href="' + waUrl + '" target="_blank" rel="noopener noreferrer">💬 WhatsApp</a>' +
+    '</div>';
+}
+function gpsFail(msg) {
+  $("gpsErr").textContent = msg;
+  $("gpsErr").classList.remove("hidden");
+  $("gps").classList.remove("busy");
+}
+
+$("gps").onclick = () => {
+  $("gpsErr").classList.add("hidden");
+  if (!navigator.geolocation) return gpsFail("GPS is not available. You can still search your pickup address above.");
+  $("gps").classList.add("busy");
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      $("pickup").value = "Current location (" + pos.coords.latitude.toFixed(5) + ", " + pos.coords.longitude.toFixed(5) + ")";
+      $("e-pickup").textContent = "";
+      $("gps").classList.remove("busy");
+    },
+    () => gpsFail("Location permission is off. You can still search your pickup address above."),
+    { enableHighAccuracy:true, timeout:10000 }
+  );
+};
+
+$("mobile").addEventListener("input", e => { e.target.value = e.target.value.replace(/\D/g, ""); });
+
+const FLOW = [
+  { id:"searching", label:"Searching for Driver", title:"Searching for nearby driver...", msg:"We're finding the closest driver for your booking.", em:"🔎" },
+  { id:"assigned",  label:"Driver Assigned",      title:"Driver assigned",               msg:"A driver has been assigned. Waiting for them to accept.", em:"👤" },
+  { id:"accepted",  label:"Driver Accepted",      title:"Driver accepted your booking",  msg:"The driver will head to your pickup location shortly.", em:"✅" },
+  { id:"arriving",  label:"Arriving at Pickup",   title:"Driver is on the way",          msg:"Your driver is heading to the pickup location.", em:"🚚" },
+  { id:"arrived",   label:"Arrived at Pickup",    title:"Driver has arrived",            msg:"Please meet the driver at pickup and load your goods.", em:"📍" },
+  { id:"started",   label:"Delivery Started",     title:"Delivery in progress",          msg:"Your goods are on the way to the drop location.", em:"📦" },
+  { id:"delivered", label:"Delivered",            title:"Delivered",                     msg:"Your delivery is complete. Thank you for choosing CarryCub!", em:"🎉" }
+];
+const CANCELLED = { id:"cancelled", label:"Cancelled", title:"Booking cancelled", msg:"This booking has been cancelled.", em:"❌" };
+const ALL_STATUSES = FLOW.concat([CANCELLED]);
+const statusLabel = id => id === "cancelled" ? CANCELLED.label : FLOW.find(s => s.id === id).label;
+
+/* ---- TEST-ONLY storage (localStorage, this browser only) ---- */
+const KEY = "carrycub:test-bookings";
+const readAll = () => { try { return JSON.parse(localStorage.getItem(KEY) || "[]"); } catch (e) { return []; } };
+const writeAll = l => { try { localStorage.setItem(KEY, JSON.stringify(l.slice(0, 20))); } catch (e) {} };
+const normId = s => s.trim().toUpperCase();
+const getB = id => readAll().find(b => b.id === normId(id)) || null;
+function saveB(b) { const s = { ...b, status:"searching" }; writeAll([s, ...readAll().filter(x => x.id !== b.id)]); return s; }
+function setStatus(id, status) { const l = readAll(), i = l.findIndex(b => b.id === normId(id)); if (i < 0) return; l[i].status = status; writeAll(l); }
+
+let confirming = false;
+
+/* ---- TEST-ONLY admin auth (not real auth) ---- */
+const ADMIN_PW = "admin123";
+const ADM_SESSION = "carrycub:admin-session";
+const isAdmin = () => { try { return sessionStorage.getItem(ADM_SESSION) === "1"; } catch (e) { return false; } };
+const adminLogin = pw => { if (pw !== ADMIN_PW) return false; try { sessionStorage.setItem(ADM_SESSION, "1"); } catch (e) {} return true; };
+const adminLogout = () => { try { sessionStorage.removeItem(ADM_SESSION); } catch (e) {} };
+
+/* ---- TEST-ONLY driver list ---- */
+const DKEY = "carrycub:test-drivers";
+const SEED_DRIVERS = [
+  { id:"d1", name:"Ramesh Kumar", phone:"9000000001", vehicleNo:"JH 05 TS 0001", vehicleType:"3-wheeler-tempo", available:true },
+  { id:"d2", name:"Suresh Yadav", phone:"9000000002", vehicleNo:"JH 05 TS 0002", vehicleType:"tata-ace-7ft", available:true },
+  { id:"d3", name:"Anil Singh", phone:"9000000003", vehicleNo:"JH 05 TS 0003", vehicleType:"tata-ace-7ft", available:true },
+  { id:"d4", name:"Manoj Prasad", phone:"9000000004", vehicleNo:"JH 05 TS 0004", vehicleType:"9-ft-pickup", available:true },
+  { id:"d5", name:"Deepak Mahto", phone:"9000000005", vehicleNo:"JH 05 TS 0005", vehicleType:"10-ft-pickup", available:false },
+  { id:"d6", name:"Vikash Sharma", phone:"9000000006", vehicleNo:"JH 05 TS 0006", vehicleType:"14-ft-lpt", available:true }
+];
+function listDrivers() {
+  try { const raw = localStorage.getItem(DKEY); if (raw) return JSON.parse(raw); } catch (e) {}
+  try { localStorage.setItem(DKEY, JSON.stringify(SEED_DRIVERS)); } catch (e) {}
+  return SEED_DRIVERS;
+}
+function setDriverAvail(id, avail) {
+  const l = listDrivers().map(d => d.id === id ? Object.assign({}, d, { available:avail }) : d);
+  try { localStorage.setItem(DKEY, JSON.stringify(l)); } catch (e) {}
+}
+function vehName(id) { const v = VEHICLES.find(x => x.id === id); return v ? v.em + " " + v.name : id; }
+
+/* ---- admin bookings helpers ---- */
+function bucketOf(status) {
+  if (status === "searching") return "pending";
+  if (status === "delivered") return "completed";
+  if (status === "cancelled") return "cancelled";
+  return "active";
+}
+const TONE = { searching:"background:#ffedd5;color:#c2410c", assigned:"background:#dbeafe;color:#1d4ed8", accepted:"background:#dbeafe;color:#1d4ed8",
+  arriving:"background:#dbeafe;color:#1d4ed8", arrived:"background:#dbeafe;color:#1d4ed8", started:"background:#dbeafe;color:#1d4ed8",
+  delivered:"background:#dcfce7;color:#15803d", cancelled:"background:#fee2e2;color:#b91c1c" };
+function pill(status) {
+  const info = status === "cancelled" ? CANCELLED : FLOW.find(s => s.id === status);
+  return '<span class="pill" style="' + TONE[status] + '">' + info.em + ' ' + info.label + '</span>';
+}
+function fmtTime(iso) {
+  const d = new Date(iso); if (isNaN(d.getTime())) return "";
+  return d.toLocaleString("en-IN", { dateStyle:"medium", timeStyle:"short" });
+}
+function bookingRow(b) {
+  return '<a class="brow" href="#/admin/booking/' + encodeURIComponent(b.id) + '"><div class="top"><b>' + b.id + '</b>' + pill(b.status) + '</div>' +
+    '<p class="route">' + esc(b.pickup) + ' → ' + esc(b.drop) + '</p>' +
+    '<div class="meta"><span>' + vehName(b.vehicleId) + ' · ' + esc(b.name) + '</span><span>' + fmtTime(b.createdAt) + '</span></div></a>';
+}
+
+/* ---- admin: dashboard ---- */
+function renderAdminDash() {
+  const all = readAll(), drivers = listDrivers();
+  const c = { pending:0, active:0, completed:0 };
+  all.forEach(b => { const k = bucketOf(b.status); if (c[k] !== undefined) c[k]++; });
+  const avail = drivers.filter(d => d.available).length;
+  const recent = all.slice(0, 5);
+  $("adminDash").innerHTML =
+    '<div class="adm"><h1>Dashboard</h1><p class="sub">Test data · stored in this browser only</p>' +
+    '<div class="kpis">' +
+      '<a class="kpi" href="#/admin/bookings/pending"><b>' + c.pending + '</b><span>New / Pending</span></a>' +
+      '<a class="kpi" href="#/admin/bookings/active"><b>' + c.active + '</b><span>Active</span></a>' +
+      '<a class="kpi" href="#/admin/bookings/completed"><b>' + c.completed + '</b><span>Completed</span></a>' +
+    '</div>' +
+    '<div class="drow"><div><b>Drivers available</b><small>' + avail + ' of ' + drivers.length + ' on duty</small></div><a class="mng" href="#/admin/drivers">Manage →</a></div>' +
+    '<div class="sechd"><h2>Recent bookings</h2><a href="#/admin/bookings/pending">View all</a></div>' +
+    (recent.length ? recent.map(bookingRow).join("") : '<div class="empty">No bookings yet on this device.</div>') +
+    '</div>';
+}
+
+/* ---- admin: booking list (pending/active/completed) ---- */
+const BUCKET_EMPTY = { pending:"No new bookings waiting right now.", active:"No bookings currently in progress.", completed:"No completed bookings yet." };
+function renderAdminList(bucket) {
+  const all = readAll().filter(b => bucketOf(b.status) === bucket);
+  const tabs = ["pending","active","completed"].map(k =>
+    '<a href="#/admin/bookings/' + k + '" class="' + (k === bucket ? "on" : "") + '">' + k[0].toUpperCase() + k.slice(1) + '</a>').join("");
+  $("adminList").innerHTML = '<div class="adm"><div class="tabs">' + tabs + '</div>' +
+    '<div style="margin-top:14px">' + (all.length ? all.map(bookingRow).join("") : '<div class="empty">' + BUCKET_EMPTY[bucket] + '</div>') + '</div></div>';
+}
+
+/* ---- admin: booking detail ---- */
+let driverPick = "";
+function renderAdminDetail(id) {
+  driverPick = "";
+  paintAdminDetail(id);
+}
+function paintAdminDetail(id, err) {
+  const b = getB(id);
+  if (!b) {
+    $("adminDetail").innerHTML = '<div class="adm"><p style="font-size:14px;color:#6b7280">Booking not found on this device.</p><a class="backlink" href="#/admin" style="margin-top:12px;display:inline-block">← Back to dashboard</a></div>';
+    return;
+  }
+  const veh = VEHICLES.find(x => x.id === b.vehicleId);
+  const drivers = listDrivers();
+  const current = drivers.find(d => d.id === b.driverId) || null;
+  const eligible = drivers.filter(d => d.vehicleType === b.vehicleId && (d.available || d.id === b.driverId));
+
+  let h = '<div class="adm"><a class="backlink" href="#/admin">← Dashboard</a>' +
+    '<div class="dhead"><h1>' + b.id + '</h1>' + pill(b.status) + '</div>' +
+    '<p class="booked">Booked ' + fmtTime(b.createdAt) + '</p>' +
+    '<div class="block"><div class="kv"><span>Pickup</span><b>' + esc(b.pickup) + '</b></div><div class="kv"><span>Drop</span><b>' + esc(b.drop) +
+    '</b></div><div class="kv"><span>Vehicle</span><b>' + vehName(b.vehicleId) + '</b></div>' +
+    (b.notes ? '<div class="kv"><span>Notes</span><b>' + esc(b.notes) + '</b></div>' : '') + '</div>' +
+    '<div class="block">' + mapHtml("adminTrackMap", "adminTrackMapNote") + '</div>' +
+    '<div class="block"><div class="kv"><span>Customer</span><b>' + esc(b.name) + '</b></div><div class="kv"><span>Mobile</span><a href="tel:+91' + b.mobile + '">+91 ' + b.mobile + '</a></div></div>' +
+    '<div class="dh2">Driver</div>';
+
+  if (current) {
+    h += '<div class="curdrv"><span class="av2" style="width:44px;height:44px;font-size:18px">🧑</span><div class="tx2"><b>' + current.name + '</b><small>' + current.vehicleNo + ' · ' + current.phone + '</small></div><a href="tel:' + current.phone + '">Call</a></div>';
+  } else if (eligible.length === 0) {
+    h += '<div class="empty">No available ' + (veh ? veh.name : "matching") + ' drivers right now. <a href="#/admin/drivers" style="color:var(--brand-dark);font-weight:500">Manage drivers</a></div>';
+  } else {
+    h += eligible.map(d => '<div class="driverpick' + (driverPick === d.id ? " sel" : "") + '" data-pick="' + d.id + '"><span class="av2">🧑</span><span class="tx2"><b>' + d.name + '</b><small>' + d.vehicleNo + '</small></span><span class="rd2"></span></div>').join("");
+    h += '<button class="assignbtn" id="assignBtn"' + (driverPick ? "" : " disabled") + '>Assign driver</button>';
+  }
+
+  h += '<div class="dh2">Change status</div><div class="statusgrid">' +
+    ALL_STATUSES.map(s => '<button class="stbtn' + (s.id === b.status ? " on" : "") + '" data-status="' + s.id + '"' + (s.id === b.status ? " disabled" : "") + '>' + s.em + ' ' + s.label + '</button>').join("") +
+    '</div>' + (err ? '<p class="aerr">' + err + '</p>' : '') + '</div>';
+
+  $("adminDetail").innerHTML = h;
+  renderLiveMap("adminTrackMap", "adminTrackMapNote", b);
+}
+function needsDriver(status) { return status !== "searching"; }
+
+/* ---- admin: drivers ---- */
+function renderAdminDrivers() {
+  const drivers = listDrivers();
+  const avail = drivers.filter(d => d.available).length;
+  $("adminDrivers").innerHTML = '<div class="adm"><h1>Drivers</h1><p class="sub">Test driver list · toggle availability manually · ' + avail + ' of ' + drivers.length + ' on duty</p>' +
+    drivers.map(d => '<div class="dcard"><span class="av2" style="width:44px;height:44px;font-size:18px">🧑</span><div class="tx3"><b>' + d.name + '</b><small>' + d.phone + '</small><small>' + vehName(d.vehicleType) + ' · ' + d.vehicleNo + '</small></div>' +
+      '<button class="toggle ' + (d.available ? "on" : "off") + '" data-toggle="' + d.id + '">' + (d.available ? "Available" : "Off duty") + '</button></div>').join("") + '</div>';
+}
+
+/* ---- admin: delegated click handling ---- */
+$("aLoginBtn").onclick = () => {
+  if (adminLogin($("apw").value)) { $("apw").value = ""; location.hash = "#/admin"; }
+  else $("e-apw").textContent = "Incorrect password";
+};
+$("apw").addEventListener("keydown", e => { if (e.key === "Enter") $("aLoginBtn").click(); });
+$("apw").addEventListener("input", () => { $("e-apw").textContent = ""; });
+
+document.addEventListener("click", e => {
+  const logout = e.target.closest("[data-logout]");
+  if (logout) {
+    if (logout.getAttribute("data-logout") === "driver") { driverLogout(); location.hash = "#/driver/login"; }
+    else { adminLogout(); location.hash = "#/admin/login"; }
+    return;
+  }
+  const pick = e.target.closest("[data-pick]");
+  if (pick) { driverPick = pick.dataset.pick; paintAdminDetail(currentAdminId()); return; }
+  const assign = e.target.closest("#assignBtn");
+  if (assign && !assign.disabled) {
+    const id = currentAdminId(), l = readAll(), i = l.findIndex(x => x.id === normId(id));
+    if (i > -1) { l[i] = Object.assign({}, l[i], { driverId: driverPick, status:"assigned" }); writeAll(l); }
+    driverPick = ""; paintAdminDetail(id); return;
+  }
+  const stBtn = e.target.closest("[data-status]");
+  if (stBtn && !stBtn.disabled) {
+    const id = currentAdminId(), status = stBtn.dataset.status, l = readAll(), i = l.findIndex(x => x.id === normId(id));
+    if (i > -1) {
+      if (needsDriver(status) && !l[i].driverId) { paintAdminDetail(id, "Assign a driver first"); return; }
+      l[i] = Object.assign({}, l[i], { status: status, driverId: status === "searching" ? undefined : l[i].driverId });
+      writeAll(l);
+    }
+    paintAdminDetail(id); return;
+  }
+  const tog = e.target.closest("[data-toggle]");
+  if (tog) { const d = listDrivers().find(x => x.id === tog.dataset.toggle); if (d) setDriverAvail(d.id, !d.available); renderAdminDrivers(); return; }
+});
+function currentAdminId() { return decodeURIComponent(location.hash.split("/")[3] || ""); }
+
+/* ---- TEST-ONLY driver auth (phone-based, not real auth) ---- */
+const DRV_SESSION = "carrycub:driver-session";
+function driverLogin(phone) {
+  const d = listDrivers().find(x => x.phone === phone.trim());
+  if (!d) return null;
+  try { sessionStorage.setItem(DRV_SESSION, d.id); } catch (e) {}
+  return d;
+}
+function currentDriverId() { try { return sessionStorage.getItem(DRV_SESSION); } catch (e) { return null; } }
+function currentDriverObj() { const id = currentDriverId(); return id ? (listDrivers().find(x => x.id === id) || null) : null; }
+function driverLogout() { try { sessionStorage.removeItem(DRV_SESSION); } catch (e) {} }
+
+function tripBlock(b, veh, mine) {
+  return '<div class="block"><div class="kv"><span>Pickup</span><b>' + esc(b.pickup) + '</b></div><div class="kv"><span>Drop</span><b>' + esc(b.drop) +
+    '</b></div><div class="kv"><span>Vehicle</span><b>' + (veh ? veh.em + ' ' + veh.name : b.vehicleId) + '</b></div>' +
+    (b.notes ? '<div class="kv"><span>Notes</span><b>' + esc(b.notes) + '</b></div>' : '') + '</div>' +
+    '<div class="block"><div class="kv"><span>Customer</span><b>' + esc(b.name) + '</b></div>' +
+    (mine
+      ? contactActions(b.mobile, "Call Customer", "This is your CarryCub driver for booking " + b.id + ".")
+      : '<p class="nodrv" style="margin-top:8px">Contact hidden — this booking is no longer assigned to you.</p>') +
+    '</div>';
+}
+function miniTimeline(b) {
+  const idx = FLOW.findIndex(s => s.id === b.status), delivered = b.status === "delivered";
+  return '<ol class="tl" style="margin-top:20px">' + FLOW.map((s, i) => {
+    const done = delivered || i < idx, cur = !delivered && i === idx;
+    return '<li>' + (i < FLOW.length - 1 ? '<span class="ln' + (i < idx ? ' on' : '') + '"></span>' : '') +
+      '<span class="cd ' + (done ? "done" : cur ? "cur" : "") + '">' + (done ? "✓" : cur ? "<i></i>" : "") + '</span>' +
+      '<span class="t ' + (done ? "done" : cur ? "cur" : "") + '">' + s.label + '</span></li>';
+  }).join("") + '</ol>';
+}
+
+/* ---- driver: assigned bookings list ---- */
+function renderDriverDash() {
+  const id = currentDriverId();
+  const mine = readAll().filter(b => b.driverId === id);
+  const active = mine.filter(b => bucketOf(b.status) === "active" || b.status === "assigned");
+  const hist = mine.filter(b => bucketOf(b.status) === "completed" || bucketOf(b.status) === "cancelled");
+  function row(b) {
+    const needsAction = b.status === "assigned";
+    const info = b.status === "cancelled" ? CANCELLED : FLOW.find(s => s.id === b.status);
+    return '<a class="brow' + (needsAction ? "" : "") + '" style="' + (needsAction ? "border-color:var(--brand)" : "") + '" href="#/driver/booking/' + encodeURIComponent(b.id) + '">' +
+      '<div class="top"><b>' + b.id + '</b><span class="pill" style="background:#ffedd5;color:#c2410c">' + info.em + ' ' + info.label + '</span></div>' +
+      '<p class="route">' + esc(b.pickup) + ' → ' + esc(b.drop) + '</p>' +
+      '<div class="meta"><span>' + vehName(b.vehicleId) + '</span><span>' + fmtTime(b.createdAt) + '</span></div>' +
+      (needsAction ? '<p style="margin:6px 0 0;font-size:11px;font-weight:500;color:var(--brand-dark)">Tap to accept or reject →</p>' : '') + '</a>';
+  }
+  $("driverDash").innerHTML = '<div class="adm"><h1>Assigned bookings</h1><p class="sub">Test data · stored in this browser only</p>' +
+    '<div style="margin-top:14px">' + (active.length ? active.map(row).join("") : '<div class="empty">No bookings assigned to you right now.</div>') + '</div>' +
+    (hist.length ? '<div class="sechd"><h2>History</h2></div><div>' + hist.map(row).join("") + '</div>' : '') + '</div>';
+}
+
+/* ---- driver: booking detail ---- */
+function renderDriverDetail(id, err) {
+  const b = getB(id), myId = currentDriverId();
+  if (!b) {
+    $("driverDetail").innerHTML = '<div class="adm"><p style="font-size:14px;color:#6b7280">Booking not found on this device.</p><a class="backlink" href="#/driver" style="margin-top:12px;display:inline-block">← Back to bookings</a></div>';
+    return;
+  }
+  const mine = b.driverId === myId;
+  const veh = VEHICLES.find(x => x.id === b.vehicleId);
+  const info = b.status === "cancelled" ? CANCELLED : FLOW.find(s => s.id === b.status);
+  const idx = FLOW.findIndex(s => s.id === b.status);
+  const next = idx !== -1 && idx < FLOW.length - 1 ? FLOW[idx + 1].id : null;
+  const nextInfo = next ? FLOW.find(s => s.id === next) : null;
+  const isAssigned = b.status === "assigned";
+  const isFinished = b.status === "delivered" || b.status === "cancelled";
+  const canAdvance = mine && !isAssigned && !isFinished && next;
+
+  let h = '<div class="adm"><a class="backlink" href="#/driver">← Assigned bookings</a>' +
+    '<div class="dhead"><h1>' + b.id + '</h1><span class="pill" style="background:#ffedd5;color:#c2410c">' + info.em + ' ' + info.label + '</span></div>' +
+    '<p class="booked">Booked ' + fmtTime(b.createdAt) + '</p>';
+  if (!mine) h += '<p style="margin-top:16px;padding:12px 16px;border-radius:16px;background:#fef2f2;color:#b91c1c;font-size:14px">This booking is no longer assigned to you.</p>';
+  h += tripBlock(b, veh, mine) + miniTimeline(b);
+  if (err) h += '<p class="aerr">' + err + '</p>';
+  if (mine && isAssigned) {
+    h += '<div style="margin-top:24px;display:flex;flex-direction:column;gap:12px">' +
+      '<button class="btn" data-drv="accept">Accept booking</button>' +
+      (driverConfirmReject
+        ? '<div class="sure">Reject this booking? It will go back to admin.<div><button class="keep" data-drv="keepReject">Keep booking</button><button class="yes" data-drv="reject">Yes, reject</button></div></div>'
+        : '<button class="cancel" data-drv="askReject">Reject booking</button>') + '</div>';
+  }
+  if (canAdvance) h += '<button class="btn" style="margin-top:24px" data-drv="advance" data-target="' + next + '">Mark: ' + nextInfo.em + ' ' + nextInfo.label + '</button>';
+  if (mine && b.status === "delivered") h += '<p style="margin-top:24px;padding:12px 16px;border-radius:16px;background:#f0fdf4;color:#15803d;text-align:center;font-size:14px">🎉 Delivered. Nice work!</p>';
+  h += '</div>';
+  $("driverDetail").innerHTML = h;
+}
+let driverConfirmReject = false;
+
+$("dLoginBtn").onclick = () => {
+  const d = driverLogin($("dph").value);
+  if (d) { $("dph").value = ""; location.hash = "#/driver"; }
+  else $("e-dph").textContent = "No driver found with that phone number";
+};
+$("dph").addEventListener("keydown", e => { if (e.key === "Enter") $("dLoginBtn").click(); });
+$("dph").addEventListener("input", e => { e.target.value = e.target.value.replace(/\D/g, ""); $("e-dph").textContent = ""; });
+
+document.addEventListener("click", e => {
+  const dlogout = e.target.closest("[data-driver-logout]");
+  if (dlogout) { driverLogout(); location.hash = "#/driver/login"; return; }
+  const act = e.target.closest("[data-drv]");
+  if (!act) return;
+  const kind = act.dataset.drv, id = currentDriverDetailId(), driverId = currentDriverId();
+  if (kind === "askReject") { driverConfirmReject = true; renderDriverDetail(id); return; }
+  if (kind === "keepReject") { driverConfirmReject = false; renderDriverDetail(id); return; }
+  if (kind === "accept" || kind === "reject") {
+    const l = readAll(), i = l.findIndex(x => x.id === normId(id));
+    if (i > -1) {
+      const b = l[i];
+      if (b.driverId !== driverId) { driverConfirmReject = false; renderDriverDetail(id, "This booking isn't assigned to you"); return; }
+      if (b.status !== "assigned") { driverConfirmReject = false; renderDriverDetail(id, kind === "accept" ? "Booking already accepted or moved on" : "Can only reject before accepting"); return; }
+      l[i] = kind === "accept" ? Object.assign({}, b, { status:"accepted" }) : Object.assign({}, b, { status:"searching", driverId:undefined });
+      writeAll(l);
+    }
+    driverConfirmReject = false; renderDriverDetail(id); return;
+  }
+  if (kind === "advance") {
+    const target = act.dataset.target, l = readAll(), i = l.findIndex(x => x.id === normId(id));
+    if (i > -1) {
+      const b = l[i], idx2 = FLOW.findIndex(s => s.id === b.status);
+      const expected = idx2 !== -1 && idx2 < FLOW.length - 1 ? FLOW[idx2 + 1].id : null;
+      if (b.driverId !== driverId) { renderDriverDetail(id, "This booking isn't assigned to you"); return; }
+      if (expected !== target) { renderDriverDetail(id, "Statuses must be updated in order"); return; }
+      l[i] = Object.assign({}, b, { status: target });
+      writeAll(l);
+    }
+    renderDriverDetail(id); return;
+  }
+});
+function currentDriverDetailId() { return decodeURIComponent(location.hash.split("/")[3] || ""); }
+
+
+
+/* ---- real map: OSM geocoding (Nominatim) + Leaflet ----
+   Never fabricates a location. If an address can't be geocoded, or the
+   driver hasn't shared GPS yet, that point is simply left off the map. */
+const GEOCACHE_PREFIX = "carrycub:geocode:";
+function geoCacheGet(key) {
+  try {
+    const raw = localStorage.getItem(GEOCACHE_PREFIX + key);
+    if (raw === null) return undefined;
+    return raw === "null" ? null : JSON.parse(raw);
+  } catch (e) { return undefined; }
+}
+function geoCacheSet(key, val) { try { localStorage.setItem(GEOCACHE_PREFIX + key, JSON.stringify(val)); } catch (e) {} }
+async function geocodeAddress(address) {
+  const trimmed = (address || "").trim();
+  if (!trimmed) return null;
+  const cached = geoCacheGet(trimmed);
+  if (cached !== undefined) return cached;
+  const q = /jamshedpur|adityapur|jharkhand/i.test(trimmed) ? trimmed : trimmed + ", Jamshedpur, Jharkhand, India";
+  try {
+    const res = await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=" + encodeURIComponent(q), { headers: { Accept: "application/json" } });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data.length) { geoCacheSet(trimmed, null); return null; }
+    const loc = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+    if (Number.isNaN(loc.lat) || Number.isNaN(loc.lng)) { geoCacheSet(trimmed, null); return null; }
+    geoCacheSet(trimmed, loc);
+    return loc;
+  } catch (e) { return null; }
+}
+function parseCurrentLocationString(text) {
+  const m = (text || "").trim().match(/^Current location \(([-\d.]+),\s*([-\d.]+)\)$/);
+  if (!m) return null;
+  const lat = parseFloat(m[1]), lng = parseFloat(m[2]);
+  if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
+  return { lat, lng };
+}
+
+function pinDivIcon(color, label) {
+  return L.divIcon({ className: "", iconSize: [80, 40], iconAnchor: [40, 34], html:
+    '<div style="display:flex;flex-direction:column;align-items:center;">' +
+    '<span style="width:16px;height:16px;border-radius:9999px;background:' + color + ';border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);display:block;"></span>' +
+    '<span style="margin-top:3px;padding:1px 6px;border-radius:6px;background:#fff;font:600 10px/1.4 system-ui,sans-serif;color:#0b1b3f;box-shadow:0 1px 3px rgba(0,0,0,.2);white-space:nowrap;">' + label + '</span></div>' });
+}
+function driverDivIcon() {
+  return L.divIcon({ className: "", iconSize: [26, 26], iconAnchor: [13, 13], html:
+    '<div style="position:relative;width:26px;height:26px;">' +
+    '<span style="position:absolute;inset:0;border-radius:9999px;background:#f97316;opacity:.35;animation:ccpulse 1.6s ease-out infinite;"></span>' +
+    '<span style="position:absolute;left:5px;top:5px;width:16px;height:16px;border-radius:9999px;background:#f97316;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);"></span></div>' });
+}
+
+const liveMaps = {}; // containerId -> { map, markers }
+function ensureLiveMap(containerId) {
+  const el = document.getElementById(containerId);
+  if (!el || typeof L === "undefined") return null;
+  if (liveMaps[containerId]) { liveMaps[containerId].map.remove(); }
+  const map = L.map(el, { zoomControl: true, scrollWheelZoom: false, tap: true }).setView([22.8046, 86.2029], 13);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(map);
+  liveMaps[containerId] = { map, markers: {} };
+  return liveMaps[containerId];
+}
+function updateLiveMap(containerId, pickup, drop, driver, noteId) {
+  const entry = liveMaps[containerId];
+  if (!entry) return;
+  const { map, markers } = entry;
+  const bounds = L.latLngBounds([]);
+  function place(key, point, icon, z) {
+    if (!point) { if (markers[key]) { markers[key].remove(); markers[key] = null; } return; }
+    const ll = L.latLng(point.lat, point.lng);
+    bounds.extend(ll);
+    if (markers[key]) markers[key].setLatLng(ll);
+    else markers[key] = L.marker(ll, { icon, zIndexOffset: z || 0 }).addTo(map);
+  }
+  place("pickup", pickup, pinDivIcon("#f97316", "Pickup"), 0);
+  place("drop", drop, pinDivIcon("#0b1b3f", "Drop"), 0);
+  place("driver", driver, driverDivIcon(), 1000);
+  const note = noteId ? $(noteId) : null;
+  if (note) note.style.display = (pickup || drop || driver) ? "none" : "flex";
+  if (!bounds.isValid()) return;
+  const ne = bounds.getNorthEast(), sw = bounds.getSouthWest();
+  if (ne.equals(sw)) map.setView(ne, Math.max(map.getZoom(), 15));
+  else map.fitBounds(bounds, { padding: [36, 36], maxZoom: 16 });
+  setTimeout(() => map.invalidateSize(), 0);
+}
+function mapHtml(containerId, noteId) {
+  return '<div class="rmap"><div id="' + containerId + '" style="height:100%;width:100%"></div>' +
+    '<div class="note" id="' + noteId + '">Map will show pickup, drop, and the driver&rsquo;s live location once available.</div></div>';
+}
+async function renderLiveMap(containerId, noteId, b) {
+  if (!ensureLiveMap(containerId)) return;
+  const [pickupLoc, dropLoc] = await Promise.all([
+    Promise.resolve(parseCurrentLocationString(b.pickup)).then(v => v || geocodeAddress(b.pickup)),
+    geocodeAddress(b.drop)
+  ]);
+  updateLiveMap(containerId, pickupLoc, dropLoc, b.driverLocation || null, noteId);
+}
+
+/* Uses this device's REAL GPS (navigator.geolocation) to stand in for the
+   driver's phone sharing a live location — the only "driver GPS" available
+   in a single-device preview. Never a fake/simulated position. */
+function shareDeviceGpsAsDriver(id, btn, afterRerender) {
+  if (!navigator.geolocation) { alert("GPS not available on this device/browser."); return; }
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = "Getting GPS fix…";
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const l = readAll(), i = l.findIndex(x => x.id === normId(id));
+      if (i > -1) {
+        l[i] = Object.assign({}, l[i], { driverLocation: { lat: pos.coords.latitude, lng: pos.coords.longitude, updatedAt: new Date().toISOString() } });
+        writeAll(l);
+      }
+      btn.disabled = false; btn.textContent = orig;
+      afterRerender();
+    },
+    () => { btn.disabled = false; btn.textContent = orig; alert("Location permission denied or unavailable."); },
+    { enableHighAccuracy: true, timeout: 15000 }
+  );
+}
+
+function renderTrack(id) {
+  const box = $("status"), b = getB(id);
+  if (!b) {
+    box.innerHTML = '<div class="nf"><div class="ic">🔍</div><h2>Booking not found</h2><p>We couldn\'t find <b>' + esc(normId(id)) +
+      '</b> on this device. Test bookings are stored only in the browser they were made in.</p><a href="#/track">Try another ID</a></div>';
+    return;
+  }
+  const status = b.status, cancelled = status === "cancelled", delivered = status === "delivered", searching = status === "searching";
+  const info = cancelled ? CANCELLED : FLOW.find(s => s.id === status);
+  const idx = FLOW.findIndex(s => s.id === status);
+  const veh = VEHICLES.find(x => x.id === b.vehicleId);
+  const canCancel = idx !== -1 && idx < 5;
+  const next = idx !== -1 && idx < FLOW.length - 1 ? FLOW[idx + 1].id : null;
+  const assigned = !cancelled && idx >= 1;
+
+  let h = '<div class="idrow"><span>Booking ID</span><b>' + b.id + '</b></div>';
+  h += '<div class="now ' + (cancelled ? "red" : delivered ? "green" : "") + '"><div class="ring">' + (searching ? '<span class="pulse"></span>' : '') +
+       '<span class="ic">' + info.em + '</span></div><h2>' + info.title + '</h2><p>' + info.msg + '</p></div>';
+  h += '<div class="blk">' + mapHtml("trackMap", "trackMapNote") + '</div>';
+  const drv = b.driverId ? listDrivers().find(function (d) { return d.id === b.driverId; }) : null;
+  const drvVeh = drv ? VEHICLES.find(function (v) { return v.id === drv.vehicleType; }) : veh;
+  h += '<div class="blk"><small>Driver</small>' + (assigned
+    ? '<div class="drv"><span class="av">🧑</span><div class="tx"><b>' + (drv ? esc(drv.name) : "Test Driver") + '</b><small>' +
+      (drvVeh ? drvVeh.name : "") + ' · ' + (drv ? esc(drv.vehicleNo) : "JH 00 XX 0000") + '</small></div>' + (drv ? '' : '<em>TEST</em>') + '</div>' +
+      (drv ? contactActions(drv.phone, "Call Driver", "This is regarding CarryCub booking " + b.id + ".") : '')
+    : '<p class="nodrv">' + (cancelled ? "No driver for this booking." : "Driver details will appear here once a driver is assigned.") + '</p>') + '</div>';
+  h += '<div class="det blk"><div><span>Pickup</span><b>' + esc(b.pickup) + '</b></div><div><span>Drop</span><b>' + esc(b.drop) +
+       '</b></div><div><span>Vehicle</span><b>' + veh.em + ' ' + veh.name + '</b></div></div>';
+  if (!cancelled) {
+    h += '<ol class="tl">' + FLOW.map((s, i) => {
+      const done = delivered || i < idx, cur = !delivered && i === idx;
+      return '<li>' + (i < FLOW.length - 1 ? '<span class="ln' + (i < idx ? ' on' : '') + '"></span>' : '') +
+        '<span class="cd ' + (done ? "done" : cur ? "cur" : "") + '">' + (done ? "✓" : cur ? "<i></i>" : "") + '</span>' +
+        '<span class="t ' + (done ? "done" : cur ? "cur" : "") + '">' + s.label + '</span></li>';
+    }).join("") + '</ol>';
+  }
+  if (canCancel) h += confirming
+    ? '<div class="sure">Cancel this booking?<div><button class="keep" data-act="keep">Keep booking</button><button class="yes" data-act="yes">Yes, cancel</button></div></div>'
+    : '<button class="cancel" data-act="cancel">Cancel booking</button>';
+  if (cancelled || delivered) h += '<a class="btn newb" style="display:block;text-align:center;text-decoration:none" href="#/">New booking</a>';
+  h += '<div class="test"><small>Test controls</small><p>Simulates driver updates for this booking. Saved only in this browser.</p>' +
+       '<button class="nx" data-act="next"' + (next ? '' : ' disabled') + '>Next status</button>' +
+       '<button type="button" class="gpsdrv" id="shareGpsBtn">📍 Share this device\u2019s GPS as driver location</button>' +
+       '<p class="gpsnote">Uses your real device GPS to stand in for the driver\u2019s phone — no fake coordinates.</p></div>';
+  box.innerHTML = h;
+  renderLiveMap("trackMap", "trackMapNote", b);
+  const gpsBtn = $("shareGpsBtn");
+  if (gpsBtn) gpsBtn.onclick = () => shareDeviceGpsAsDriver(b.id, gpsBtn, () => renderTrack(b.id));
+}
+
+function renderLookup() {
+  const rec = readAll().slice(0, 5);
+  $("recent").innerHTML = rec.length
+    ? '<p class="rechd">Recent test bookings on this device</p>' + rec.map(b => '<button class="recrow" data-id="' + b.id + '"><b>' + b.id + '</b><span>' + statusLabel(b.status) + '</span></button>').join("")
+    : "";
+}
+
+/* ---- tiny hash router: #/  |  #/track  |  #/track/CC-... ---- */
+function route() {
+  const raw = location.hash.replace(/^#\/?/, "") || "";
+  const parts = raw.split("/");
+  const isAdmin = parts[0] === "admin";
+  const isDriver = !isAdmin && parts[0] === "driver";
+  const isTrack = !isAdmin && !isDriver && parts[0] === "track";
+  const tid = isTrack && parts[1] ? decodeURIComponent(parts[1]) : "";
+  const isPanel = isAdmin || isDriver;
+
+  const customerBits = ["form", "lookup", "status"];
+  const adminBits = ["adminLogin", "adminDash", "adminList", "adminDetail", "adminDrivers"];
+  const driverBits = ["driverLogin", "driverDash", "driverDetail"];
+  [].concat(customerBits, adminBits, driverBits).forEach(id => $(id).classList.add("hidden"));
+  document.querySelector(".hero").classList.toggle("hidden", isPanel);
+  $("abar").classList.toggle("hidden", !isPanel);
+  document.querySelector(".adminlink").classList.toggle("hidden", isPanel);
+
+  if (isAdmin) {
+    $("abarLabel").innerHTML = '<a href="#/admin" style="color:#fff;text-decoration:none">CarryCub Admin</a>';
+    $("abarLogout").setAttribute("data-logout", "admin");
+    const sub = parts[1] || "";
+    if (sub !== "login" && !isAdmin_ok()) { location.hash = "#/admin/login"; return; }
+    if (sub === "login") { if (isAdmin_ok()) { location.hash = "#/admin"; return; } $("adminLogin").classList.remove("hidden"); }
+    else if (sub === "bookings") { $("adminList").classList.remove("hidden"); renderAdminList(parts[2] || "pending"); }
+    else if (sub === "booking") { $("adminDetail").classList.remove("hidden"); renderAdminDetail(decodeURIComponent(parts[2] || "")); }
+    else if (sub === "drivers") { $("adminDrivers").classList.remove("hidden"); renderAdminDrivers(); }
+    else { $("adminDash").classList.remove("hidden"); renderAdminDash(); }
+  } else if (isDriver) {
+    const sub = parts[1] || "";
+    if (sub !== "login" && !currentDriverId()) { location.hash = "#/driver/login"; return; }
+    const drv = currentDriverObj();
+    $("abarLabel").innerHTML = '<a href="#/driver" style="color:#fff;text-decoration:none">CarryCub Driver</a>' + (drv ? '<span style="display:block;font-size:11px;color:rgba(255,255,255,.6)">' + esc(drv.name) + '</span>' : "");
+    $("abarLogout").setAttribute("data-logout", "driver");
+    if (sub === "login") { if (currentDriverId()) { location.hash = "#/driver"; return; } $("driverLogin").classList.remove("hidden"); $("dHint").textContent = "Test numbers: " + listDrivers().map(d => d.phone).join(", "); }
+    else if (sub === "booking") { $("driverDetail").classList.remove("hidden"); renderDriverDetail(decodeURIComponent(parts[2] || "")); }
+    else { $("driverDash").classList.remove("hidden"); renderDriverDash(); }
+  } else {
+    $("form").classList.toggle("hidden", isTrack);
+    $("lookup").classList.toggle("hidden", !(isTrack && !tid));
+    $("status").classList.toggle("hidden", !(isTrack && tid));
+    $("hTitle").textContent = isTrack ? "Track your" : "Mini Truck";
+    $("hSub").textContent = !isTrack ? "Fast local goods transport in Jamshedpur" : tid ? "Live status of your mini truck" : "Enter your Booking ID to see its status";
+    $("hAction").textContent = isTrack ? "New booking" : "Track booking";
+    $("hAction").setAttribute("href", isTrack ? "#/" : "#/track");
+    if (isTrack && tid) { confirming = false; renderTrack(tid); }
+    if (isTrack && !tid) renderLookup();
+  }
+  window.scrollTo(0, 0);
+}
+function isAdmin_ok() { return isAdmin(); }
+window.addEventListener("hashchange", route);
+window.addEventListener("storage", e => {   // keeps other open tabs in sync while testing
+  const parts = location.hash.replace(/^#\/?/, "").split("/");
+  if (parts[0] === "track" && parts[1] && (e.key === KEY || e.key === null)) renderTrack(decodeURIComponent(parts[1]));
+});
+
+$("status").addEventListener("click", e => {
+  const btn = e.target.closest("[data-act]"); if (!btn) return;
+  const id = decodeURIComponent(location.hash.split("/")[2] || ""), b = getB(id); if (!b) return;
+  const a = btn.dataset.act;
+  if (a === "cancel") confirming = true;
+  if (a === "keep") confirming = false;
+  if (a === "yes") { setStatus(id, "cancelled"); confirming = false; }
+  if (a === "next") { const i = FLOW.findIndex(s => s.id === b.status); if (i > -1 && i < FLOW.length - 1) setStatus(id, FLOW[i + 1].id); }
+  renderTrack(id);
+});
+
+function goLookup() {
+  const v = normId($("lid").value);
+  if (v.length < 6) { $("e-lid").textContent = "Enter your Booking ID (e.g. CC-260922-K7QM)"; return; }
+  location.hash = "#/track/" + encodeURIComponent(v);
+}
+$("lgo").onclick = goLookup;
+$("lid").addEventListener("keydown", e => { if (e.key === "Enter") goLookup(); });
+$("lid").addEventListener("input", () => { $("e-lid").textContent = ""; });
+$("recent").addEventListener("click", e => { const r = e.target.closest("[data-id]"); if (r) location.hash = "#/track/" + encodeURIComponent(r.dataset.id); });
+
+$("form").addEventListener("submit", e => {
+  e.preventDefault();
+  const v = { pickup:$("pickup").value.trim(), drop:$("drop").value.trim(),
+              name:$("name").value.trim(), mobile:$("mobile").value, notes:$("notes").value.trim() };
+  const errs = {
+    pickup: v.pickup.length < 3 ? "Enter pickup location" : "",
+    drop: v.drop.length < 3 ? "Enter drop location" : "",
+    vehicle: vehicleId ? "" : "Select a vehicle",
+    name: v.name.length < 2 ? "Enter your name" : "",
+    mobile: /^[6-9]\d{9}$/.test(v.mobile) ? "" : "Enter a valid 10-digit mobile number"
+  };
+  Object.keys(errs).forEach(k => $("e-" + k).textContent = errs[k]);
+  if (Object.values(errs).some(Boolean)) return;
+
+  const b = { id: bookingId(), vehicleId, ...v, createdAt: new Date().toISOString() };
+  saveB(b);
+  $("form").reset(); vehicleId = ""; renderVehicles();
+  location.hash = "#/track/" + b.id;
+});
+
+renderVehicles();
+route();
+</script>
+</body>
+</html>

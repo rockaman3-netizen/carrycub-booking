@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand: #f97316;
+  --color-brand-dark: #ea580c;
+  --color-navy: #0b1b3f;
+  --color-ink: #111827;
+}
+
+html,
+body {
+  height: 100%;
+  background: #f3f4f6;
+  color: var(--color-ink);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.map-placeholder {
+  background:
+    repeating-linear-gradient(35deg, #f4f0e9 0 14px, #ece7dd 14px 16px),
+    #f4f0e9;
+}

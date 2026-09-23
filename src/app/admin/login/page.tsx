@@ -1,0 +1,70 @@
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { adminLogin, isAdminLoggedIn } from "@/lib/admin-auth";
+
+export default function AdminLoginPage() {
+  const router = useRouter();
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (isAdminLoggedIn()) router.replace("/admin");
+  }, [router]);
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (adminLogin(password)) {
+      router.replace("/admin");
+    } else {
+      setError("Incorrect password");
+    }
+  }
+
+  return (
+    <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col bg-[#f3f4f6]">
+      <div className="flex flex-1 flex-col justify-center px-6 py-10">
+        <div className="rounded-3xl bg-white p-6 shadow-sm">
+          <p className="text-sm font-medium text-brand">CarryCub</p>
+          <h1 className="mt-1 text-2xl font-bold text-navy">Admin login</h1>
+          <p className="mt-1 text-sm text-gray-500">Test build — not real authentication</p>
+
+          <form onSubmit={handleSubmit} noValidate className="mt-6">
+            <label className="block text-sm font-medium text-gray-500">Password</label>
+            <input
+              type="password"
+              className="w-full border-0 border-b-2 border-gray-200 bg-transparent px-0 py-2.5 text-base outline-none focus:border-brand"
+              placeholder="Enter admin password"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                setError("");
+              }}
+              autoFocus
+            />
+            {error && <span className="mt-1 block text-sm text-red-600">{error}</span>}
+            <button
+              type="submit"
+              className="mt-8 w-full rounded-2xl bg-navy py-3.5 text-base font-semibold text-white active:bg-navy/90"
+            >
+              Log in
+            </button>
+          </form>
+
+          {process.env.NEXT_PUBLIC_SHOW_TEST_HINTS === "true" && (
+            <p className="mt-4 text-center text-xs text-gray-400">
+              Dev hint enabled via NEXT_PUBLIC_SHOW_TEST_HINTS — check
+              NEXT_PUBLIC_ADMIN_PASSWORD in your local .env file.
+            </p>
+          )}
+        </div>
+
+        <Link href="/" className="mt-6 text-center text-sm text-gray-500">
+          ← Back to customer app
+        </Link>
+      </div>
+    </main>
+  );
+}
