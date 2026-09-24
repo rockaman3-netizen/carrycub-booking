@@ -13,44 +13,55 @@ export default function DriverList() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<NewDriverInput>(EMPTY_FORM);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
+  // Which driver's availability button is currently saving.
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  usePolling(async () => {
+  async function refreshDrivers() {
     try {
       setDrivers(await listDrivers());
       setListError("");
     } catch (err) {
-      setListError((err as Error).message);
+      setListError((err as Error).message || "Could not load drivers");
     }
-  }, []);
+  }
+
+  usePolling(refreshDrivers, []);
 
   async function toggle(d: Driver) {
-    await setDriverAvailability(d.id, !d.available);
+    if (busyId) return;
+    setBusyId(d.id);
     try {
-      setDrivers(await listDrivers());
-      setListError("");
+      await setDriverAvailability(d.id, !d.available);
     } catch (err) {
-      setListError((err as Error).message);
+      setListError((err as Error).message || "Could not update availability");
+    } finally {
+      setBusyId(null);
     }
+    await refreshDrivers();
   }
 
   async function handleAddDriver(e: React.FormEvent) {
     e.preventDefault();
+    if (saving) return;
     setSaving(true);
     setErrors({});
-    const { driver, error, errors: fieldErrors } = await createDriver(form);
-    setSaving(false);
-    if (!driver) {
-      setErrors(fieldErrors ?? { name: error ?? "Could not save driver" });
-      return;
-    }
-    setForm(EMPTY_FORM);
-    setShowForm(false);
+    setFormError("");
     try {
-      setDrivers(await listDrivers());
-      setListError("");
+      const { driver, error, errors: fieldErrors } = await createDriver(form);
+      if (!driver) {
+        if (fieldErrors && Object.keys(fieldErrors).length > 0) setErrors(fieldErrors);
+        else setFormError(error ?? "Could not save driver");
+        return;
+      }
+      setForm(EMPTY_FORM);
+      setShowForm(false);
+      await refreshDrivers();
     } catch (err) {
-      setListError((err as Error).message);
+      setFormError((err as Error).message || "Network problem. Please try again.");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -73,7 +84,7 @@ export default function DriverList() {
 
       {listError && (
         <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
-          Couldn&apos;t load drivers: {listError}
+          {listError}
         </p>
       )}
 
@@ -137,6 +148,12 @@ export default function DriverList() {
             {errors.vehicleNo && <span className="mt-1 block text-xs text-red-600">{errors.vehicleNo}</span>}
           </div>
 
+          {formError && (
+            <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+              {formError}
+            </p>
+          )}
+
           <button
             type="submit"
             disabled={saving}
@@ -150,6 +167,7 @@ export default function DriverList() {
       <div className="mt-4 flex flex-col gap-2.5">
         {drivers.map((d) => {
           const vehicle = vehicleById(d.vehicleType);
+          const busy = busyId === d.id;
           return (
             <div
               key={d.id}
@@ -167,12 +185,13 @@ export default function DriverList() {
               </div>
               <button
                 type="button"
+                disabled={busyId !== null}
                 onClick={() => toggle(d)}
-                className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold ${
+                className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold disabled:opacity-60 ${
                   d.available ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"
                 }`}
               >
-                {d.available ? "Available" : "Off duty"}
+                {busy ? "Saving…" : d.available ? "Available" : "Off duty"}
               </button>
             </div>
           );
