@@ -73,7 +73,9 @@ export default function BookingConfirmation({ id }: { id: string }) {
   usePolling(
     async () => {
       const b = await getBooking(id);
-      setBooking(b);
+      // A failed poll (e.g. right after the app comes back from the
+      // background) returns null. Once loaded, keep showing the booking.
+      setBooking((prev) => b ?? (prev ? prev : null));
     },
     [id],
   );
