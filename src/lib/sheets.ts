@@ -1,17 +1,6 @@
 // SERVER ONLY. Never import this file from a "use client" component.
-//
-// Data source: a Google Apps Script Web App bound to the spreadsheet,
-// instead of the Sheets API + service account. This avoids needing a
-// billing-verified Google Cloud project. See APPS_SCRIPT_SETUP.md at the
-// project root for how to deploy the script and get the URL + secret.
-//
-// Data model: one Google Sheet (spreadsheet), three tabs:
-//   Bookings        — one row per booking, updated in place as it moves
-//                      through the flow (created → assigned → ... → delivered)
-//   Drivers         — one row per driver (name, phone, vehicle, availability)
-//   LocationUpdates — one row per booking, holding only the driver's latest
-//                      GPS fix (upserted, not appended, so it never grows
-//                      unbounded)
+// Data source: Google Apps Script Web App (see APPS_SCRIPT_SETUP.md).
+// Tabs: Bookings, Drivers, LocationUpdates.
 
 import type { StatusId } from "@/lib/status";
 
@@ -19,10 +8,6 @@ const BOOKINGS_SHEET = "Bookings";
 const DRIVERS_SHEET = "Drivers";
 const LOCATIONS_SHEET = "LocationUpdates";
 
-// For these statuses the sheet's status column shows a human-readable label
-// (e.g. "Driver Accepted") instead of the raw id. Inside the app the status
-// id stays the same ("accepted", "arriving", "arrived", "started", "delivered"), so we
-// translate at the sheet boundary: label on write, id on read.
 const SHEET_STATUS_LABELS: Partial<Record<StatusId, string>> = {
   accepted: "Driver Accepted",
   arriving: "Arriving at Pickup",
@@ -31,8 +16,7 @@ const SHEET_STATUS_LABELS: Partial<Record<StatusId, string>> = {
   delivered: "Delivered",
 };
 
-// ---- Row <-> object column layouts (order matters — this is the sheet's
-// column order, A onward). Keep in sync with the header row in the sheet. ----
+// Column order must match the sheet's header row (A onward).
 const BOOKING_COLUMNS = [
   "id",
   "createdAt",
@@ -83,7 +67,6 @@ export type SheetBooking = {
   driverPhone: string | null;
   driverVehicleNo: string | null;
   driverVehicleType: string | null;
-  // Merged in from LocationUpdates, not a Bookings column.
   driverLocation?: { lat: number; lng: number; updatedAt: string } | null;
 };
 
@@ -127,7 +110,6 @@ async function callScript<T>(body: ScriptRequest): Promise<T> {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify({ ...body, secret: getScriptSecret() }),
-    // Route handlers already run server-side; never cache writes/reads.
     cache: "no-store",
   });
   if (!res.ok) {
@@ -140,12 +122,13 @@ async function callScript<T>(body: ScriptRequest): Promise<T> {
   return data as T;
 }
 
-// ---- Generic row helpers (same shape as the old Sheets-API versions, so
-// everything below this point is unchanged from before) ----
+// ---- Generic row helpers ----
 
 async function getRows(sheetName: string): Promise<string[][]> {
-  const data = await callScript<{ values?: string[][] }>({ action: "getRows", sheet: sheetName });
-  return data.values ?? [];
+  const data = await callScript<{ values?: unknown[][] }>({ action: "getRows", sheet: sheetName });
+  // Google Sheets returns real numbers/booleans for numeric-looking cells
+  // (e.g. mobile 8084750977, available TRUE). Convert every cell to a string.
+  return (data.values ?? []).map((row) => row.map((v) => (v === null || v === undefined ? "" : String(v))));
 }
 
 async function appendRow(sheetName: string, row: (string | number | null)[]): Promise<void> {
@@ -156,7 +139,7 @@ async function appendRow(sheetName: string, row: (string | number | null)[]): Pr
   });
 }
 
-// 1-indexed data row (i.e. 1 = the first row under the header). Returns -1 if not found.
+// index = 0-based position in the data rows. Returns -1 if not found.
 async function findRowIndex(sheetName: string, idColumnValue: string): Promise<{ index: number; rows: string[][] }> {
   const rows = await getRows(sheetName);
   const index = rows.findIndex((r) => r[0] === idColumnValue);
@@ -165,7 +148,7 @@ async function findRowIndex(sheetName: string, idColumnValue: string): Promise<{
 
 async function updateRow(
   sheetName: string,
-  rowNumber: number, // 1-indexed data row, matches findRowIndex().index + 1
+  rowNumber: number, // 1-indexed data row, i.e. findRowIndex().index + 1
   row: (string | number | null)[],
 ): Promise<void> {
   await callScript({
@@ -273,13 +256,7 @@ export async function createBooking(input: {
   distanceKm: number | null;
   estimatedFare: number | null;
 }): Promise<SheetBooking> {
-  // The booking ID can be supplied by the caller (the customer app
-  // generates it client-side before submitting, so it can navigate to
-  // /booking/:id/confirmed immediately). Guard against a collision — two
-  // rows sharing one ID would silently break every later lookup, since
-  // findRowIndex() only ever matches the first row with that ID (the
-  // second becomes an orphaned row no admin/driver/tracking action can
-  // reach).
+  // Guard against duplicate booking IDs.
   const { index: existingIndex } = await findRowIndex(BOOKINGS_SHEET, input.id);
   if (existingIndex !== -1) {
     throw new Error("DUPLICATE_BOOKING_ID");
@@ -298,9 +275,7 @@ export async function createBooking(input: {
   return booking;
 }
 
-// Read-modify-write against the current row. `mutate` receives the current
-// booking and returns the fields to change (or null to reject the update,
-// e.g. a business-rule violation — the caller decides what that means).
+// Read-modify-write against the current row.
 async function mutateBooking(
   id: string,
   mutate: (current: SheetBooking) => Partial<SheetBooking> | { error: string },
@@ -423,19 +398,13 @@ export async function driverAdvance(
 
 function rowToDriver(row: string[]): SheetDriver {
   const get = (col: (typeof DRIVER_COLUMNS)[number]) => row[DRIVER_COLUMNS.indexOf(col)] ?? "";
-  // The sheet's "available" column can come back as an actual boolean
-  // (Google Sheets stores TRUE/FALSE checkboxes as real booleans, not
-  // text) instead of the string "TRUE"/"FALSE" — handle both.
-  const rawAvailable: unknown = get("available");
-  const available =
-    typeof rawAvailable === "boolean" ? rawAvailable : String(rawAvailable).trim().toUpperCase() === "TRUE";
   return {
     id: get("id"),
     name: get("name"),
     phone: get("phone"),
     vehicleNo: get("vehicleNo"),
     vehicleType: get("vehicleType"),
-    available,
+    available: get("available").trim().toUpperCase() === "TRUE",
   };
 }
 
@@ -445,9 +414,6 @@ export async function listDrivers(): Promise<SheetDriver[]> {
 }
 
 export async function createDriver(driver: SheetDriver): Promise<SheetDriver> {
-  // Same "check first, then append" pattern as createBooking — avoids
-  // silently overwriting an existing driver if the generated ID ever
-  // collided.
   const { index: existingIndex } = await findRowIndex(DRIVERS_SHEET, driver.id);
   if (existingIndex !== -1) {
     throw new Error("DUPLICATE_DRIVER_ID");
@@ -467,7 +433,7 @@ export async function getDriver(id: string): Promise<SheetDriver | null> {
 }
 
 export async function getDriverByPhone(phone: string): Promise<SheetDriver | null> {
-  const digits = phone.replace(/\D/g, "").slice(-10); // compare last 10 digits, ignore spaces/+91/dashes
+  const digits = phone.replace(/\D/g, "").slice(-10); // last 10 digits, ignore spaces/+91/dashes
   if (!digits) return null;
   const drivers = await listDrivers();
   return drivers.find((d) => d.phone.replace(/\D/g, "").slice(-10) === digits) ?? null;
@@ -479,7 +445,7 @@ export async function setDriverAvailability(id: string, available: boolean): Pro
   const driver = { ...rowToDriver(rows[index]), available };
   await updateRow(
     DRIVERS_SHEET,
-    index,
+    index + 1, // 1-indexed data row
     DRIVER_COLUMNS.map((col) => (col === "available" ? (available ? "TRUE" : "FALSE") : driver[col as keyof SheetDriver])) as (
       | string
       | number
@@ -489,7 +455,7 @@ export async function setDriverAvailability(id: string, available: boolean): Pro
   return driver;
 }
 
-// ---- LocationUpdates (one row per booking — upserted, never appended twice) ----
+// ---- LocationUpdates (one row per booking, upserted) ----
 
 function rowToLocation(row: string[]): { bookingId: string; lat: number; lng: number; updatedAt: string } {
   const get = (col: (typeof LOCATION_COLUMNS)[number]) => row[LOCATION_COLUMNS.indexOf(col)] ?? "";
@@ -531,8 +497,6 @@ export async function upsertLocation(
   if (index === -1) {
     await appendRow(LOCATIONS_SHEET, row);
   } else {
-    // updateRow expects a 1-indexed data row, i.e. findRowIndex().index + 1
-    // (index alone would overwrite the row above — or the header for row 0).
     await updateRow(LOCATIONS_SHEET, index + 1, row);
   }
   return { lat, lng, updatedAt };
