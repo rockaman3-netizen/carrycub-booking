@@ -13,7 +13,7 @@ export default function Home() {
       bannerFull
     >
       <BookingForm />
-      <div className="flex items-center justify-center gap-4 border-t border-gray-100 px-6 py-4 text-center">
+      <div className="flex items-center justify-center gap-4 border-t border-gray-100 px-6 py-3 text-center">
         <Link href="/track" className="text-xs text-gray-400">
           Track booking
         </Link>

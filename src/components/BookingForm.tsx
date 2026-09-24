@@ -40,7 +40,7 @@ const EMPTY: BookingInput = {
 };
 
 const underline =
-  "w-full min-w-0 border-0 border-b-2 border-gray-200 bg-transparent px-0 py-2.5 text-base outline-none placeholder:text-gray-400 focus:border-brand";
+  "w-full min-w-0 border-0 border-b-2 border-gray-200 bg-transparent px-0 py-2 text-base outline-none placeholder:text-gray-400 focus:border-brand";
 
 function Err({ text }: { text?: string }) {
   return text ? <span className="mt-1 block text-sm text-red-600">{text}</span> : null;
@@ -63,7 +63,7 @@ const STEP_FIELDS: Record<number, (keyof BookingInput)[]> = {
 
 function StepHeader({ step }: { step: number }) {
   return (
-    <div className="mb-6 flex items-center gap-2 px-1">
+    <div className="mb-4 flex items-center gap-2 px-1">
       {STEPS.map((s, i) => (
         <div key={s.n} className="flex flex-1 items-center gap-2">
           <div
@@ -279,7 +279,7 @@ export default function BookingForm() {
 
   return (
     <form onSubmit={handleSubmit} noValidate className="flex flex-1 flex-col">
-      <div className="flex-1 px-6 pt-8">
+      <div className="flex-1 px-5 pt-5">
         <StepHeader step={step} />
 
         {/* ───────── Step 1: Location ───────── */}
@@ -333,7 +333,7 @@ export default function BookingForm() {
         </div>
 
         {/* Drop */}
-        <div className="relative mt-8 pl-7">
+        <div className="relative mt-5 pl-7">
           <span className="absolute left-0 top-1 h-3.5 w-3.5 rounded-full bg-navy" />
           <span className="block text-[13px] font-medium text-gray-500">Drop location</span>
           <input
@@ -347,12 +347,12 @@ export default function BookingForm() {
           <Err text={errors.drop} />
         </div>
 
-        <p className="mt-6 text-xs text-gray-400">
+        <p className="mt-4 text-xs text-gray-400">
           Currently serving Jamshedpur &amp; Adityapur only
         </p>
 
         {/* Real OpenStreetMap: pickup / drop pins appear as the addresses resolve */}
-        <div className="mt-5">
+        <div className="mt-3">
           <TrackingMap
             pickup={mapPickup}
             drop={mapDrop}
@@ -437,7 +437,7 @@ export default function BookingForm() {
 
         {/* ───────── Step 3: Customer details ───────── */}
         {step === 3 && (
-        <div className="space-y-7 pb-10">
+        <div className="space-y-4 pb-6">
           <div>
             <span className="block text-[13px] font-semibold text-gray-700">Your name</span>
             <input
@@ -454,7 +454,7 @@ export default function BookingForm() {
           <div>
             <span className="block text-[13px] font-semibold text-gray-700">Mobile number</span>
             <div className="flex items-center gap-2">
-              <span className="shrink-0 border-b-2 border-gray-200 py-2.5 text-base font-medium text-gray-700">+91</span>
+              <span className="shrink-0 border-b-2 border-gray-200 py-2 text-base font-medium text-gray-700">+91</span>
               <input
                 className={`${underline} font-medium text-navy`}
                 type="tel"
@@ -485,7 +485,7 @@ export default function BookingForm() {
         )}
       </div>
 
-      <div className="sticky bottom-0 rounded-b-none border-t border-gray-100 bg-white px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+      <div className="sticky bottom-0 rounded-b-none border-t border-gray-100 bg-white px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         {submitError && <p className="mb-3 text-sm text-red-600">{submitError}</p>}
         <div className="flex gap-3">
           {step > 1 && (

@@ -116,7 +116,7 @@ export default function BookingConfirmation({ id }: { id: string }) {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col bg-[#f3f4f6] shadow-sm">
       {/* Brand header */}
-      <header className="relative overflow-hidden bg-white px-6 pb-8 pt-[max(env(safe-area-inset-top),2.5rem)] text-center">
+      <header className="relative overflow-hidden bg-white px-6 pb-6 pt-[max(env(safe-area-inset-top),1.75rem)] text-center">
         <Image
           src="/carrycub-wordmark.png"
           alt="CarryCub"
@@ -126,7 +126,7 @@ export default function BookingConfirmation({ id }: { id: string }) {
           className="mx-auto h-auto w-40"
         />
 
-        <div className="mx-auto mt-6 flex h-16 w-16 items-center justify-center rounded-full bg-orange-50">
+        <div className="mx-auto mt-4 flex h-16 w-16 items-center justify-center rounded-full bg-orange-50">
           <span className="flex h-12 w-12 items-center justify-center rounded-full bg-brand text-2xl">
             ✓
           </span>
@@ -142,7 +142,7 @@ export default function BookingConfirmation({ id }: { id: string }) {
       </header>
 
       {/* Card */}
-      <div className="-mt-4 flex flex-1 flex-col rounded-t-3xl bg-white px-5 pb-8 pt-6 shadow-sm">
+      <div className="-mt-4 flex flex-1 flex-col rounded-t-3xl bg-white px-5 pb-6 pt-4 shadow-sm">
         {/* Current status */}
         <div className={`rounded-2xl px-5 py-5 text-center ${tone}`}>
           <div className="relative mx-auto flex h-14 w-14 items-center justify-center">
@@ -162,7 +162,7 @@ export default function BookingConfirmation({ id }: { id: string }) {
         </div>
 
         {/* Trip details */}
-        <div className="mt-6 space-y-4 rounded-2xl border border-gray-200 px-4 py-4">
+        <div className="mt-4 space-y-3 rounded-2xl border border-gray-200 px-4 py-4">
           <div className="flex gap-3">
             <span className="mt-0.5 h-5 w-5 shrink-0 rounded-full bg-brand" />
             <div className="min-w-0 flex-1">

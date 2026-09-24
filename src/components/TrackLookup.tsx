@@ -39,7 +39,7 @@ export default function TrackLookup() {
   }
 
   return (
-    <div className="flex-1 px-6 pt-8 pb-10">
+    <div className="flex-1 px-5 pt-5 pb-6">
       <form onSubmit={go} noValidate>
         <label className="block text-sm font-medium text-gray-500">Booking ID</label>
         <input
@@ -56,7 +56,7 @@ export default function TrackLookup() {
         {error && <span className="mt-1 block text-sm text-red-600">{error}</span>}
         <button
           type="submit"
-          className="mt-8 w-full rounded-2xl bg-brand py-3.5 text-base font-semibold text-white active:bg-brand-dark"
+          className="mt-5 w-full rounded-2xl bg-brand py-3.5 text-base font-semibold text-white active:bg-brand-dark"
         >
           Track booking
         </button>

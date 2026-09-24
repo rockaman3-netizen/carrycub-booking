@@ -75,7 +75,7 @@ export default function Shell({
         <div
           className={`${
             bannerFull ? "-mt-8" : "-mt-4"
-          } flex flex-1 flex-col rounded-t-3xl bg-white shadow-[0_-8px_24px_rgba(0,0,0,0.18)]`}
+          } relative z-10 flex flex-1 flex-col rounded-t-3xl bg-white shadow-[0_-8px_24px_rgba(0,0,0,0.18)]`}
         >
           {children}
         </div>

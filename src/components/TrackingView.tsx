@@ -105,7 +105,7 @@ export default function TrackingView({ id }: { id: string }) {
   const tone = isCancelled ? "bg-red-50" : isDelivered ? "bg-green-50" : "bg-orange-50";
 
   return (
-    <section className="px-6 py-8">
+    <section className="px-5 py-5">
       {/* Booking ID */}
       <div className="flex items-center justify-between gap-3 text-sm">
         <span className="text-gray-500">Booking ID</span>
@@ -129,7 +129,7 @@ export default function TrackingView({ id }: { id: string }) {
       {/* Timeline — "Booking Confirmed" is always complete once a booking exists,
           then mirrors the real status flow. Hidden for cancelled bookings. */}
       {!isCancelled && (
-        <ol className="mt-6">
+        <ol className="mt-4">
           <li className="relative flex items-start gap-4 pb-6">
             <span className="absolute bottom-0 left-[11px] top-6 w-0.5 bg-brand" />
             <span className="relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand text-xs text-white">
@@ -219,7 +219,7 @@ export default function TrackingView({ id }: { id: string }) {
       </div>
 
       {/* Live map: only once the driver is actually moving toward pickup */}
-      <div className="mt-6">
+      <div className="mt-4">
         {showMap ? (
           <TrackingMap pickup={booking.pickupLoc} drop={booking.dropLoc} driver={location} />
         ) : (
@@ -262,7 +262,7 @@ export default function TrackingView({ id }: { id: string }) {
       )}
 
       {/* Trip details */}
-      <div className="mt-6 space-y-3 rounded-2xl border border-gray-200 px-4 py-4 text-sm">
+      <div className="mt-4 space-y-3 rounded-2xl border border-gray-200 px-4 py-4 text-sm">
         <div className="flex justify-between gap-4">
           <span className="shrink-0 text-gray-500">Pickup</span>
           <span className="min-w-0 break-words text-right font-medium">{booking.pickup}</span>
@@ -294,7 +294,7 @@ export default function TrackingView({ id }: { id: string }) {
 
       {/* Cancel (customer) */}
       {canCancel(status) && (
-        <div className="mt-8">
+        <div className="mt-5">
           {!confirmCancel ? (
             <button
               type="button"
