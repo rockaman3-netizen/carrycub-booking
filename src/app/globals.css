@@ -5,6 +5,7 @@
   --color-brand-dark: #ea580c;
   --color-navy: #0b1b3f;
   --color-ink: #111827;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, sans-serif;
 }
 
 html,
