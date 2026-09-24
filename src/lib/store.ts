@@ -82,6 +82,30 @@ export async function getBooking(id: string): Promise<StoredBooking | null> {
   return booking;
 }
 
+// Driver detail screen: tells "really not found" apart from a network or
+// server error, so a temporary hiccup doesn't show "Booking not found".
+export type FetchBookingResult =
+  | { kind: "ok"; booking: StoredBooking }
+  | { kind: "notFound" }
+  | { kind: "error" };
+
+export async function fetchBooking(id: string): Promise<FetchBookingResult> {
+  try {
+    const res = await fetch(`/api/bookings/${encodeURIComponent(normalizeId(id))}`, { cache: "no-store" });
+    if (res.status === 404) return { kind: "notFound" };
+    if (!res.ok) return { kind: "error" };
+    const data = await readJson(res);
+    const booking = fromApi(data.booking ?? null);
+    if (!booking) return { kind: "notFound" };
+    if (booking.status === "delivered" || booking.status === "cancelled") {
+      clearActiveBookingId(booking.id);
+    }
+    return { kind: "ok", booking };
+  } catch {
+    return { kind: "error" };
+  }
+}
+
 // Admin-only: the full booking list.
 export async function listBookings(): Promise<StoredBooking[]> {
   const res = await fetch("/api/bookings", { headers: adminHeaders() });
