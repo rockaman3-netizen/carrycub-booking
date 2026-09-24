@@ -30,9 +30,17 @@ export async function POST(req: NextRequest) {
   if (!isAdminRequest(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const body = await req.json();
+
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+  }
+
   const name = String(body.name ?? "").trim();
-  const phone = String(body.phone ?? "").trim();
+  // Accept "+91 98765 43210", "098765-43210" etc: keep digits, use the last 10.
+  const phone = String(body.phone ?? "").replace(/\D/g, "").slice(-10);
   const vehicleNo = String(body.vehicleNo ?? "").trim();
   const vehicleType = String(body.vehicleType ?? "").trim();
 
