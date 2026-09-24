@@ -1,6 +1,7 @@
 import { normalizeId, type Booking, type LatLng } from "@/lib/booking";
 import { type StatusId } from "@/lib/status";
 import { adminHeaders } from "@/lib/admin-auth";
+import { clearActiveBookingId } from "@/lib/recent-bookings";
 
 export { normalizeId };
 
@@ -73,7 +74,12 @@ export async function getBooking(id: string): Promise<StoredBooking | null> {
   const res = await fetch(`/api/bookings/${encodeURIComponent(normalizeId(id))}`);
   const data = await readJson(res);
   if (!res.ok) return null;
-  return fromApi(data.booking);
+  const booking = fromApi(data.booking);
+  // A finished trip is no longer "in progress" for the customer app.
+  if (booking && (booking.status === "delivered" || booking.status === "cancelled")) {
+    clearActiveBookingId(booking.id);
+  }
+  return booking;
 }
 
 // Admin-only: the full booking list.
@@ -101,6 +107,7 @@ export async function cancelBooking(id: string): Promise<StoredBooking | null> {
   const res = await fetch(`/api/bookings/${encodeURIComponent(normalizeId(id))}/cancel`, { method: "POST" });
   const data = await readJson(res);
   if (!res.ok) return null;
+  clearActiveBookingId(normalizeId(id));
   return fromApi(data.booking);
 }
 
