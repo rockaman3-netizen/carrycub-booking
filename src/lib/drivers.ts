@@ -18,6 +18,28 @@ export async function listDrivers(): Promise<Driver[]> {
   return (data.drivers as Driver[] | undefined) ?? [];
 }
 
+export type NewDriverInput = {
+  name: string;
+  phone: string;
+  vehicleType: string;
+  vehicleNo: string;
+};
+
+export async function createDriver(
+  input: NewDriverInput,
+): Promise<{ driver: Driver | null; error?: string; errors?: Record<string, string> }> {
+  const res = await fetch("/api/drivers", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...adminHeaders() },
+    body: JSON.stringify(input),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    return { driver: null, error: data.error, errors: data.errors };
+  }
+  return { driver: (data.driver as Driver | undefined) ?? null };
+}
+
 export async function setDriverAvailability(id: string, available: boolean): Promise<Driver | null> {
   const res = await fetch(`/api/drivers/${encodeURIComponent(id)}/availability`, {
     method: "POST",

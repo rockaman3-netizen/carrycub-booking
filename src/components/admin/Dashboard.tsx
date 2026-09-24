@@ -89,12 +89,12 @@ export default function Dashboard() {
         })}
       </div>
 
-      <div className="mt-3 flex items-center justify-between rounded-2xl border border-gray-200 bg-white px-4 py-3">
+      <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3">
         <div>
           <p className="text-sm font-semibold text-navy">Drivers available</p>
           <p className="text-xs text-gray-500">{availableDrivers} of {drivers.length} on duty</p>
         </div>
-        <Link href="/admin/drivers" className="text-xs font-medium text-brand-dark">
+        <Link href="/admin/drivers" className="shrink-0 whitespace-nowrap text-xs font-medium text-brand-dark">
           Manage →
         </Link>
       </div>
@@ -123,7 +123,7 @@ export default function Dashboard() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search by Booking ID, name, or mobile"
-            className="w-full rounded-2xl border border-gray-200 bg-white py-3 pl-10 pr-9 text-sm outline-none placeholder:text-gray-400 focus:border-brand"
+            className="w-full min-w-0 text-ellipsis rounded-2xl border border-gray-200 bg-white py-3 pl-10 pr-9 text-base outline-none placeholder:text-[13px] placeholder:text-gray-400 focus:border-brand"
           />
           {query && (
             <button
@@ -139,7 +139,7 @@ export default function Dashboard() {
       </div>
 
       {/* List */}
-      <div className="mt-6 flex items-center justify-between">
+      <div className="mt-6 flex items-center justify-between gap-3">
         <h2 className="text-sm font-semibold text-navy">
           {isFiltering ? `Results (${filtered.length})` : "Recent bookings"}
         </h2>
@@ -150,7 +150,7 @@ export default function Dashboard() {
               setFilter("all");
               setQuery("");
             }}
-            className="text-xs font-medium text-brand-dark"
+            className="shrink-0 whitespace-nowrap text-xs font-medium text-brand-dark"
           >
             Clear filters
           </button>

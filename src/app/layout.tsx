@@ -11,12 +11,12 @@ export const metadata: Metadata = {
   description: "Standalone CarryCub mini-truck booking — testing build",
   manifest: "/manifest-customer.json",
   icons: {
-    icon: "/icons/icon-192.png",
-    apple: "/icons/icon-192.png",
+    icon: [{ url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }],
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
   },
   appleWebApp: {
     capable: true,
-    statusBarStyle: "black-translucent",
+    statusBarStyle: "default",
     title: "CarryCub",
   },
 };

@@ -19,6 +19,18 @@ const BOOKINGS_SHEET = "Bookings";
 const DRIVERS_SHEET = "Drivers";
 const LOCATIONS_SHEET = "LocationUpdates";
 
+// For these statuses the sheet's status column shows a human-readable label
+// (e.g. "Driver Accepted") instead of the raw id. Inside the app the status
+// id stays the same ("accepted", "arriving", "arrived", "started", "delivered"), so we
+// translate at the sheet boundary: label on write, id on read.
+const SHEET_STATUS_LABELS: Partial<Record<StatusId, string>> = {
+  accepted: "Driver Accepted",
+  arriving: "Arriving at Pickup",
+  arrived: "Arrived at Pickup",
+  started: "Delivery Started",
+  delivered: "Delivered",
+};
+
 // ---- Row <-> object column layouts (order matters — this is the sheet's
 // column order, A onward). Keep in sync with the header row in the sheet. ----
 const BOOKING_COLUMNS = [
@@ -176,13 +188,22 @@ function num(v: string | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function sheetStatusToId(raw: string): StatusId {
+  const v = raw.trim();
+  if (!v) return "searching";
+  for (const [id, label] of Object.entries(SHEET_STATUS_LABELS)) {
+    if (label && v.toLowerCase() === label.toLowerCase()) return id as StatusId;
+  }
+  return v as StatusId;
+}
+
 function rowToBooking(row: string[]): SheetBooking {
   const get = (col: (typeof BOOKING_COLUMNS)[number]) => row[BOOKING_COLUMNS.indexOf(col)] ?? "";
   return {
     id: get("id"),
     createdAt: get("createdAt"),
     updatedAt: get("updatedAt"),
-    status: (get("status") || "searching") as StatusId,
+    status: sheetStatusToId(get("status")),
     pickup: get("pickup"),
     drop: get("drop"),
     pickupLat: num(get("pickupLat")),
@@ -205,6 +226,7 @@ function rowToBooking(row: string[]): SheetBooking {
 
 function bookingToRow(b: SheetBooking): (string | number | null)[] {
   return BOOKING_COLUMNS.map((col) => {
+    if (col === "status") return SHEET_STATUS_LABELS[b.status] ?? b.status;
     const v = b[col as keyof SheetBooking];
     return v === undefined ? null : (v as string | number | null);
   });
@@ -289,7 +311,7 @@ async function mutateBooking(
   const patch = mutate(current);
   if ("error" in patch) return { booking: current, error: patch.error };
   const updated: SheetBooking = { ...current, ...patch, updatedAt: new Date().toISOString() };
-  await updateRow(BOOKINGS_SHEET, index, bookingToRow(updated));
+  await updateRow(BOOKINGS_SHEET, index + 1, bookingToRow(updated));
   updated.driverLocation = await getLocation(id);
   return { booking: updated };
 }
@@ -416,6 +438,23 @@ export async function listDrivers(): Promise<SheetDriver[]> {
   return rows.filter((r) => r[0]).map(rowToDriver);
 }
 
+export async function createDriver(driver: SheetDriver): Promise<SheetDriver> {
+  // Same "check first, then append" pattern as createBooking — avoids
+  // silently overwriting an existing driver if the generated ID ever
+  // collided.
+  const { index: existingIndex } = await findRowIndex(DRIVERS_SHEET, driver.id);
+  if (existingIndex !== -1) {
+    throw new Error("DUPLICATE_DRIVER_ID");
+  }
+  await appendRow(
+    DRIVERS_SHEET,
+    DRIVER_COLUMNS.map((col) =>
+      col === "available" ? (driver.available ? "TRUE" : "FALSE") : driver[col as keyof SheetDriver],
+    ) as (string | number | null)[],
+  );
+  return driver;
+}
+
 export async function getDriver(id: string): Promise<SheetDriver | null> {
   const drivers = await listDrivers();
   return drivers.find((d) => d.id === id) ?? null;
@@ -486,7 +525,9 @@ export async function upsertLocation(
   if (index === -1) {
     await appendRow(LOCATIONS_SHEET, row);
   } else {
-    await updateRow(LOCATIONS_SHEET, index, row);
+    // updateRow expects a 1-indexed data row, i.e. findRowIndex().index + 1
+    // (index alone would overwrite the row above — or the header for row 0).
+    await updateRow(LOCATIONS_SHEET, index + 1, row);
   }
   return { lat, lng, updatedAt };
 }
@@ -494,5 +535,5 @@ export async function upsertLocation(
 async function clearLocation(bookingId: string): Promise<void> {
   const { index } = await findRowIndex(LOCATIONS_SHEET, bookingId);
   if (index === -1) return;
-  await deleteRow(LOCATIONS_SHEET, index);
+  await deleteRow(LOCATIONS_SHEET, index + 1);
 }

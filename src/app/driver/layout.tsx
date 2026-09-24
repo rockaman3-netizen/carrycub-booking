@@ -8,12 +8,12 @@ export const metadata: Metadata = {
   description: "CarryCub driver panel — accept bookings, update trip status, share live location.",
   manifest: "/manifest-driver.json",
   icons: {
-    icon: "/icons/icon-192.png",
-    apple: "/icons/icon-192.png",
+    icon: [{ url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }],
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
   },
   appleWebApp: {
     capable: true,
-    statusBarStyle: "black-translucent",
+    statusBarStyle: "default",
     title: "CarryCub Driver",
   },
 };

@@ -125,7 +125,7 @@ export default function DriverBookingDetail({ id }: { id: string }) {
   }
 
   return (
-    <div className="px-5 py-6 pb-28">
+    <div className="px-5 py-6 pb-40">
       <Link href="/driver" className="text-xs font-medium text-gray-500">
         ← Assigned bookings
       </Link>
@@ -149,8 +149,8 @@ export default function DriverBookingDetail({ id }: { id: string }) {
           this driver still shows the name for context but hides the number. */}
       <div className="mt-4 space-y-3 rounded-2xl border border-gray-200 bg-white px-4 py-4 text-sm">
         <div className="flex justify-between gap-4">
-          <span className="text-gray-500">Customer</span>
-          <span className="text-right font-medium">{booking.name}</span>
+          <span className="shrink-0 text-gray-500">Customer</span>
+          <span className="min-w-0 break-words text-right font-medium">{booking.name}</span>
         </div>
         {mine ? (
           <div className="flex gap-2 border-t border-gray-100 pt-3">
@@ -171,28 +171,28 @@ export default function DriverBookingDetail({ id }: { id: string }) {
       {/* Trip — pickup/drop each get a one-tap Navigate button */}
       <div className="mt-4 space-y-4 rounded-2xl border border-gray-200 bg-white px-4 py-4 text-sm">
         <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <span className="text-gray-500">Pickup</span>
-            <p className="truncate font-medium text-navy">{booking.pickup}</p>
+            <p className="break-words font-medium text-navy">{booking.pickup}</p>
           </div>
           <NavigateButton label={booking.pickup} loc={booking.pickupLoc} />
         </div>
         <div className="flex items-center justify-between gap-3 border-t border-gray-100 pt-4">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <span className="text-gray-500">Drop</span>
-            <p className="truncate font-medium text-navy">{booking.drop}</p>
+            <p className="break-words font-medium text-navy">{booking.drop}</p>
           </div>
           <NavigateButton label={booking.drop} loc={booking.dropLoc} />
         </div>
-        <div className="flex items-center justify-between border-t border-gray-100 pt-4">
+        <div className="flex items-center justify-between gap-3 border-t border-gray-100 pt-4">
           <span className="text-gray-500">Vehicle</span>
-          <span className="font-medium text-navy">
-            {vehicle ? `${vehicle.emoji} ${vehicle.name}` : booking.vehicleId}
+          <span className="text-right font-medium text-navy">
+            {vehicle ? `${vehicle.name}` : booking.vehicleId}
           </span>
         </div>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <span className="text-gray-500">Fare</span>
-          <span className="font-semibold text-navy">
+          <span className="text-right font-semibold text-navy">
             {booking.estimatedFare != null ? (
               <>
                 ₹{booking.estimatedFare}
@@ -209,8 +209,8 @@ export default function DriverBookingDetail({ id }: { id: string }) {
         </div>
         {booking.notes && (
           <div className="flex justify-between gap-4 border-t border-gray-100 pt-4">
-            <span className="text-gray-500">Notes</span>
-            <span className="text-right font-medium">{booking.notes}</span>
+            <span className="shrink-0 text-gray-500">Notes</span>
+            <span className="min-w-0 break-words text-right font-medium">{booking.notes}</span>
           </div>
         )}
       </div>
@@ -219,7 +219,7 @@ export default function DriverBookingDetail({ id }: { id: string }) {
       {canShareLocation && (
         <div className="mt-4 rounded-2xl border border-gray-200 bg-white px-4 py-4">
           <div className="flex items-center justify-between gap-3">
-            <div>
+            <div className="min-w-0">
               <p className="text-sm font-semibold text-navy">Live location sharing</p>
               <p className="text-xs text-gray-500">
                 {sharingOn ? "Visible to admin and the customer" : "Currently off"}
@@ -316,7 +316,7 @@ export default function DriverBookingDetail({ id }: { id: string }) {
                   <button
                     type="button"
                     onClick={() => setConfirmReject(true)}
-                    className="rounded-2xl border border-red-200 px-5 py-3.5 text-sm font-semibold text-red-600 active:bg-red-50"
+                    className="shrink-0 rounded-2xl border border-red-200 px-5 py-3.5 text-sm font-semibold text-red-600 active:bg-red-50"
                   >
                     Reject
                   </button>

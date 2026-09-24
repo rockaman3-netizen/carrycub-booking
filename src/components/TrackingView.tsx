@@ -39,7 +39,10 @@ export default function TrackingView({ id }: { id: string }) {
   usePolling(
     async () => {
       const b = await getBooking(id);
-      setBooking(b);
+      // A failed poll (network/Apps Script hiccup) comes back as null. Once
+      // the booking has loaded, keep showing it instead of flipping to
+      // "Booking not found" — the next poll will refresh it.
+      setBooking((prev) => b ?? (prev ? prev : null));
     },
     [id],
   );
@@ -89,8 +92,10 @@ export default function TrackingView({ id }: { id: string }) {
   // "Booking Confirmed" is an always-complete step shown ahead of the real
   // status flow (a booking that exists has, by definition, been confirmed).
   const arrivingIndex = FLOW.findIndex((s) => s.id === "arriving");
-  // Live map only once the driver is actually moving toward pickup (or later).
-  const showMap = !isCancelled && flowIndex >= arrivingIndex;
+  // Live map once the driver is moving toward pickup (or later) — or as soon
+  // as the driver is sharing a real GPS location, which they can switch on
+  // right after accepting.
+  const showMap = !isCancelled && (flowIndex >= arrivingIndex || Boolean(location));
 
   async function handleCancel() {
     const updated = await cancelBooking(booking!.id);
@@ -102,7 +107,7 @@ export default function TrackingView({ id }: { id: string }) {
   return (
     <section className="px-6 py-8">
       {/* Booking ID */}
-      <div className="flex items-center justify-between text-sm">
+      <div className="flex items-center justify-between gap-3 text-sm">
         <span className="text-gray-500">Booking ID</span>
         <span className="font-semibold tracking-wider text-navy">{booking.id}</span>
       </div>
@@ -175,10 +180,10 @@ export default function TrackingView({ id }: { id: string }) {
         {driverAssigned ? (
           <div className="rounded-2xl border border-gray-200 px-4 py-3">
             <div className="flex items-center gap-3">
-              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-gray-100 text-xl">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xl">
                 🧑
               </span>
-              <div className="flex-1">
+              <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-navy">
                   {driver?.name ?? TEST_DRIVER.name}
                 </p>
@@ -186,7 +191,7 @@ export default function TrackingView({ id }: { id: string }) {
                   {driverVehicle?.name} · {driver?.vehicleNo ?? TEST_DRIVER.vehicleNo}
                 </p>
               </div>
-              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500">
+              <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500">
                 TEST
               </span>
             </div>
@@ -233,13 +238,13 @@ export default function TrackingView({ id }: { id: string }) {
         <div className="mt-4 rounded-2xl border border-gray-200 px-4 py-3 text-sm">
           {location ? (
             <>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <span className="font-medium text-navy">📍 Driver location</span>
                 <a
                   href={`https://www.google.com/maps?q=${location.lat},${location.lng}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs font-medium text-brand-dark"
+                  className="shrink-0 text-xs font-medium text-brand-dark"
                 >
                   Open in Maps
                 </a>
@@ -259,23 +264,23 @@ export default function TrackingView({ id }: { id: string }) {
       {/* Trip details */}
       <div className="mt-6 space-y-3 rounded-2xl border border-gray-200 px-4 py-4 text-sm">
         <div className="flex justify-between gap-4">
-          <span className="text-gray-500">Pickup</span>
-          <span className="text-right font-medium">{booking.pickup}</span>
+          <span className="shrink-0 text-gray-500">Pickup</span>
+          <span className="min-w-0 break-words text-right font-medium">{booking.pickup}</span>
         </div>
         <div className="flex justify-between gap-4">
-          <span className="text-gray-500">Drop</span>
-          <span className="text-right font-medium">{booking.drop}</span>
+          <span className="shrink-0 text-gray-500">Drop</span>
+          <span className="min-w-0 break-words text-right font-medium">{booking.drop}</span>
         </div>
         <div className="flex justify-between gap-4">
-          <span className="text-gray-500">Vehicle</span>
-          <span className="text-right font-medium">
-            {vehicle ? `${vehicle.emoji} ${vehicle.name}` : booking.vehicleId}
+          <span className="shrink-0 text-gray-500">Vehicle</span>
+          <span className="min-w-0 break-words text-right font-medium">
+            {vehicle ? `${vehicle.name}` : booking.vehicleId}
           </span>
         </div>
         {booking.estimatedFare != null && (
           <div className="flex justify-between gap-4">
-            <span className="text-gray-500">Estimated fare</span>
-            <span className="text-right font-medium">
+            <span className="shrink-0 text-gray-500">Estimated fare</span>
+            <span className="min-w-0 break-words text-right font-medium">
               ₹{booking.estimatedFare}
               {booking.distanceKm != null && (
                 <span className="ml-1 text-xs font-normal text-gray-400">

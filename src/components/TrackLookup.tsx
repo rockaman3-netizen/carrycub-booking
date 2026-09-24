@@ -73,10 +73,10 @@ export default function TrackLookup() {
                 <button
                   type="button"
                   onClick={() => router.push(`/track/${encodeURIComponent(b.id)}`)}
-                  className="flex w-full items-center justify-between rounded-2xl border border-gray-200 px-4 py-3 text-left active:bg-gray-50"
+                  className="flex w-full items-center justify-between gap-3 rounded-2xl border border-gray-200 px-4 py-3 text-left active:bg-gray-50"
                 >
                   <span className="text-sm font-semibold tracking-wider text-navy">{b.id}</span>
-                  <span className="text-xs text-gray-500">{getStatus(b.status).label}</span>
+                  <span className="shrink-0 text-right text-xs text-gray-500">{getStatus(b.status).label}</span>
                 </button>
               </li>
             ))}

@@ -9,9 +9,15 @@ export default function Home() {
       accent="Booking"
       subtitle="Fast local goods transport in Jamshedpur"
       action={{ href: "/track", label: "Track booking" }}
+      banner="/banner-mini-trucks.webp"
+      bannerFull
     >
       <BookingForm />
       <div className="flex items-center justify-center gap-4 border-t border-gray-100 px-6 py-4 text-center">
+        <Link href="/track" className="text-xs text-gray-400">
+          Track booking
+        </Link>
+        <span className="text-gray-300">·</span>
         <Link href="/admin/login" className="text-xs text-gray-400">
           Admin panel
         </Link>

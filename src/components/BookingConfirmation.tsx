@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { VEHICLES } from "@/lib/vehicles";
@@ -39,7 +40,7 @@ function CopyBookingId({ id }: { id: string }) {
       type="button"
       onClick={copy}
       aria-label="Copy booking ID"
-      className="flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-xs font-medium text-white active:bg-white/25"
+      className="flex items-center gap-1.5 rounded-full bg-gray-200/70 px-3 py-1.5 text-xs font-medium text-gray-700 active:bg-gray-300"
     >
       {copied ? (
         <>
@@ -115,21 +116,25 @@ export default function BookingConfirmation({ id }: { id: string }) {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col bg-[#f3f4f6] shadow-sm">
       {/* Brand header */}
-      <header className="relative overflow-hidden bg-navy px-6 pb-8 pt-10 text-center">
-        <span aria-hidden className="text-2xl">🐻</span>
-        <p className="mt-1 text-sm font-bold tracking-wide text-white">
-          Carry<span className="text-brand">Cub</span>
-        </p>
+      <header className="relative overflow-hidden bg-white px-6 pb-8 pt-[max(env(safe-area-inset-top),2.5rem)] text-center">
+        <Image
+          src="/carrycub-wordmark.png"
+          alt="CarryCub"
+          width={520}
+          height={116}
+          priority
+          className="mx-auto h-auto w-40"
+        />
 
-        <div className="mx-auto mt-5 flex h-16 w-16 items-center justify-center rounded-full bg-white/10">
+        <div className="mx-auto mt-6 flex h-16 w-16 items-center justify-center rounded-full bg-orange-50">
           <span className="flex h-12 w-12 items-center justify-center rounded-full bg-brand text-2xl">
             ✓
           </span>
         </div>
-        <h1 className="mt-4 text-xl font-extrabold text-white">Booking Confirmed!</h1>
+        <h1 className="mt-4 text-xl font-semibold text-gray-900">Booking Confirmed!</h1>
 
-        <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5">
-          <span className="text-xs font-medium tracking-wider text-white/80">
+        <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1.5">
+          <span className="text-xs font-medium tracking-wider text-gray-600">
             {booking.id}
           </span>
           <CopyBookingId id={booking.id} />
@@ -160,29 +165,29 @@ export default function BookingConfirmation({ id }: { id: string }) {
         <div className="mt-6 space-y-4 rounded-2xl border border-gray-200 px-4 py-4">
           <div className="flex gap-3">
             <span className="mt-0.5 h-5 w-5 shrink-0 rounded-full bg-brand" />
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="text-xs font-medium text-gray-500">Pickup</p>
-              <p className="truncate text-sm font-medium text-navy">{booking.pickup}</p>
+              <p className="break-words text-sm font-medium text-navy">{booking.pickup}</p>
             </div>
           </div>
           <div className="flex gap-3">
             <span className="mt-0.5 h-5 w-5 shrink-0 rounded-full bg-navy" />
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="text-xs font-medium text-gray-500">Drop</p>
-              <p className="truncate text-sm font-medium text-navy">{booking.drop}</p>
+              <p className="break-words text-sm font-medium text-navy">{booking.drop}</p>
             </div>
           </div>
 
           <div className="border-t border-gray-100 pt-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3">
               <span className="text-sm text-gray-500">Vehicle</span>
-              <span className="text-sm font-semibold text-navy">
-                {vehicle ? `${vehicle.emoji} ${vehicle.name}` : booking.vehicleId}
+              <span className="text-right text-sm font-semibold text-navy">
+                {vehicle ? `${vehicle.name}` : booking.vehicleId}
               </span>
             </div>
-            <div className="mt-2.5 flex items-center justify-between">
-              <span className="text-sm text-gray-500">Estimated fare</span>
-              <span className="text-sm font-semibold text-navy">
+            <div className="mt-2.5 flex items-center justify-between gap-3">
+              <span className="shrink-0 text-sm text-gray-500">Estimated fare</span>
+              <span className="text-right text-sm font-semibold text-navy">
                 {booking.estimatedFare != null ? (
                   <>
                     ₹{booking.estimatedFare}
@@ -197,7 +202,7 @@ export default function BookingConfirmation({ id }: { id: string }) {
                 )}
               </span>
             </div>
-            <div className="mt-2.5 flex items-center justify-between">
+            <div className="mt-2.5 flex items-center justify-between gap-3">
               <span className="text-sm text-gray-500">Status</span>
               <span className="rounded-full bg-orange-50 px-2.5 py-1 text-xs font-semibold text-brand-dark">
                 {info.label}

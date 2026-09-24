@@ -30,7 +30,7 @@ export function CallButton({
       aria-label={label}
       className={
         className ??
-        "flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-brand py-2.5 text-sm font-semibold text-white active:bg-brand-dark"
+        "flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl bg-brand px-2 py-2.5 text-center text-sm font-semibold text-white active:bg-brand-dark"
       }
     >
       📞 {label}
@@ -61,7 +61,7 @@ export function WhatsAppButton({
       aria-label={label}
       className={
         className ??
-        "flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-green-500 py-2.5 text-sm font-semibold text-green-600 active:bg-green-50"
+        "flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl border border-green-500 px-2 py-2.5 text-center text-sm font-semibold text-green-600 active:bg-green-50"
       }
     >
       💬 {label}

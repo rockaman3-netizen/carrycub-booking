@@ -89,7 +89,7 @@ export default function BookingDetail({ id }: { id: string }) {
         ← Dashboard
       </Link>
 
-      <div className="mt-3 flex items-center justify-between">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
         <h1 className="text-lg font-bold tracking-wide text-navy">{booking.id}</h1>
         <StatusPill status={booking.status} />
       </div>
@@ -98,29 +98,29 @@ export default function BookingDetail({ id }: { id: string }) {
       {/* Trip */}
       <div className="mt-5 space-y-3 rounded-2xl border border-gray-200 bg-white px-4 py-4 text-sm">
         <div className="flex justify-between gap-4">
-          <span className="text-gray-500">Pickup</span>
-          <span className="text-right font-medium">{booking.pickup}</span>
+          <span className="shrink-0 text-gray-500">Pickup</span>
+          <span className="min-w-0 break-words text-right font-medium">{booking.pickup}</span>
         </div>
         <div className="flex justify-between gap-4">
-          <span className="text-gray-500">Drop</span>
-          <span className="text-right font-medium">{booking.drop}</span>
+          <span className="shrink-0 text-gray-500">Drop</span>
+          <span className="min-w-0 break-words text-right font-medium">{booking.drop}</span>
         </div>
         <div className="flex justify-between gap-4">
-          <span className="text-gray-500">Vehicle</span>
-          <span className="text-right font-medium">
-            {vehicle ? `${vehicle.emoji} ${vehicle.name}` : booking.vehicleId}
+          <span className="shrink-0 text-gray-500">Vehicle</span>
+          <span className="min-w-0 break-words text-right font-medium">
+            {vehicle ? `${vehicle.name}` : booking.vehicleId}
           </span>
         </div>
         {booking.notes && (
           <div className="flex justify-between gap-4">
-            <span className="text-gray-500">Notes</span>
-            <span className="text-right font-medium">{booking.notes}</span>
+            <span className="shrink-0 text-gray-500">Notes</span>
+            <span className="min-w-0 break-words text-right font-medium">{booking.notes}</span>
           </div>
         )}
         {booking.estimatedFare != null && (
           <div className="flex justify-between gap-4">
-            <span className="text-gray-500">Estimated fare</span>
-            <span className="text-right font-medium">
+            <span className="shrink-0 text-gray-500">Estimated fare</span>
+            <span className="min-w-0 break-words text-right font-medium">
               ₹{booking.estimatedFare}
               {booking.distanceKm != null && (
                 <span className="ml-1 text-xs font-normal text-gray-400">
@@ -135,11 +135,11 @@ export default function BookingDetail({ id }: { id: string }) {
       {/* Customer */}
       <div className="mt-4 space-y-3 rounded-2xl border border-gray-200 bg-white px-4 py-4 text-sm">
         <div className="flex justify-between gap-4">
-          <span className="text-gray-500">Customer</span>
-          <span className="text-right font-medium">{booking.name}</span>
+          <span className="shrink-0 text-gray-500">Customer</span>
+          <span className="min-w-0 break-words text-right font-medium">{booking.name}</span>
         </div>
         <div className="flex justify-between gap-4">
-          <span className="text-gray-500">Mobile</span>
+          <span className="shrink-0 text-gray-500">Mobile</span>
           <a
             href={`tel:${toIndianE164(booking.mobile) ?? `+91${booking.mobile}`}`}
             className="text-right font-medium text-brand-dark"
@@ -154,19 +154,19 @@ export default function BookingDetail({ id }: { id: string }) {
         <h2 className="mb-2 text-sm font-semibold text-navy">Driver</h2>
         {currentDriver ? (
           <div className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3">
-            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-gray-100 text-xl">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xl">
               🧑
             </span>
-            <div className="flex-1">
+            <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-navy">{currentDriver.name}</p>
-              <p className="text-xs text-gray-500">
+              <p className="break-words text-xs text-gray-500">
                 {currentDriver.vehicleNo} · {currentDriver.phone}
               </p>
             </div>
             {toIndianE164(currentDriver.phone) && (
               <a
                 href={`tel:${toIndianE164(currentDriver.phone)}`}
-                className="rounded-full bg-gray-100 px-3 py-1.5 text-xs font-medium text-navy"
+                className="shrink-0 rounded-full bg-gray-100 px-3 py-1.5 text-xs font-medium text-navy"
               >
                 Call
               </a>
@@ -192,15 +192,15 @@ export default function BookingDetail({ id }: { id: string }) {
                       driverPick === d.id ? "border-brand bg-orange-50" : "border-gray-200 bg-white"
                     }`}
                   >
-                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-lg">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-100 text-lg">
                       🧑
                     </span>
-                    <span className="flex-1">
+                    <span className="min-w-0 flex-1">
                       <span className="block text-sm font-semibold text-navy">{d.name}</span>
                       <span className="block text-xs text-gray-500">{d.vehicleNo}</span>
                     </span>
                     <span
-                      className={`h-5 w-5 rounded-full border-2 ${
+                      className={`h-5 w-5 shrink-0 rounded-full border-2 ${
                         driverPick === d.id ? "border-brand bg-brand" : "border-gray-300"
                       }`}
                     />
@@ -233,13 +233,13 @@ export default function BookingDetail({ id }: { id: string }) {
         <div className="mt-4 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm">
           {location ? (
             <>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <span className="font-medium text-navy">📍 Live location</span>
                 <a
                   href={`https://www.google.com/maps?q=${location.lat},${location.lng}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs font-medium text-brand-dark"
+                  className="shrink-0 text-xs font-medium text-brand-dark"
                 >
                   Open in Maps
                 </a>

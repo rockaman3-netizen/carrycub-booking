@@ -1,29 +1,28 @@
 // CarryCub service worker — shared by the customer app and the /driver app
 // (same origin, one worker, scope "/").
 //
-// Strategy, kept deliberately simple (no build-time precache manifest is
-// available here, so this is runtime caching, not a full asset list):
-//   - /api/**            -> always network. Bookings/drivers/locations are
-//                           live data from Google Sheets; serving a stale
-//                           cached response here would be actively wrong
-//                           (e.g. showing a booking as "searching" after it
-//                           was actually delivered), so this route is never
-//                           intercepted.
-//   - cross-origin        -> never intercepted (map tiles, geocoding, etc.)
-//                           — avoids opaque-response caching pitfalls.
-//   - navigations (pages) -> network-first, falling back to a cached copy
-//                           of that page, and finally to offline.html if
-//                           neither is available.
-//   - same-origin assets  -> cache-first (JS/CSS bundles are content-hashed
-//                           by Next.js, icons/manifests rarely change).
+//   - /api/**            -> never intercepted. Bookings/drivers/locations are
+//                           live data; a stale cached response would be wrong.
+//   - cross-origin       -> never intercepted (map tiles, geocoding, etc.).
+//   - Next RSC / data    -> never intercepted (payloads must always be fresh).
+//   - navigations        -> network-first; only good (200, same-origin) pages
+//                           are cached; falls back to the cached page, then
+//                           to /offline.html.
+//   - manifests          -> network-first (so manifest/icon changes propagate).
+//   - other same-origin  -> stale-while-revalidate (fast + offline, and it
+//     GET assets            self-updates, so icon/asset changes are picked up
+//                           on the next load instead of being stuck forever).
 
-const CACHE_VERSION = "carrycub-v1";
+const CACHE_VERSION = "carrycub-v2";
 const PRECACHE = [
   "/offline.html",
   "/manifest-customer.json",
   "/manifest-driver.json",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
+  "/icons/icon-maskable-192.png",
+  "/icons/icon-maskable-512.png",
+  "/icons/apple-touch-icon.png",
 ];
 
 self.addEventListener("install", (event) => {
@@ -41,6 +40,8 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+const cacheable = (res) => res && res.ok && res.type === "basic" && !res.redirected;
+
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return; // never intercept writes
@@ -48,13 +49,21 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return; // map tiles, geocoding, etc.
   if (url.pathname.startsWith("/api/")) return; // always live
+  if (
+    request.headers.get("RSC") ||
+    url.searchParams.has("_rsc") ||
+    url.pathname.startsWith("/_next/data/")
+  )
+    return; // Next.js server-component / data payloads
 
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy));
+          if (cacheable(res)) {
+            const copy = res.clone();
+            caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy));
+          }
           return res;
         })
         .catch(async () => (await caches.match(request)) ?? (await caches.match("/offline.html"))),
@@ -62,17 +71,37 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  event.respondWith(
-    caches.match(request).then(
-      (cached) =>
-        cached ??
-        fetch(request).then((res) => {
-          if (res.ok) {
+  if (url.pathname.startsWith("/manifest")) {
+    event.respondWith(
+      fetch(request)
+        .then((res) => {
+          if (cacheable(res)) {
             const copy = res.clone();
             caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy));
           }
           return res;
-        }),
-    ),
+        })
+        .catch(() => caches.match(request)),
+    );
+    return;
+  }
+
+  event.respondWith(
+    caches.match(request).then((cached) => {
+      const network = fetch(request)
+        .then((res) => {
+          if (cacheable(res)) {
+            const copy = res.clone();
+            caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy));
+          }
+          return res;
+        })
+        .catch(() => cached);
+      if (cached) {
+        event.waitUntil(network.catch(() => {}));
+        return cached;
+      }
+      return network;
+    }),
   );
 });

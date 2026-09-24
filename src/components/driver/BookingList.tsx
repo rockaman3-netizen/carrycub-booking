@@ -60,17 +60,17 @@ function Row({ booking }: { booking: StoredBooking }) {
         needsAction ? "border-brand" : "border-gray-200"
       }`}
     >
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
         <span className="text-sm font-semibold tracking-wide text-navy">{booking.id}</span>
         <span className="whitespace-nowrap rounded-full bg-orange-50 px-2.5 py-1 text-[11px] font-medium text-brand-dark">
           {info.emoji} {info.label}
         </span>
       </div>
-      <p className="truncate text-xs text-gray-500">
+      <p className="line-clamp-2 break-words text-xs text-gray-500">
         {booking.pickup} → {booking.drop}
       </p>
-      <div className="flex items-center justify-between text-xs text-gray-400">
-        <span>{vehicle ? `${vehicle.emoji} ${vehicle.name}` : booking.vehicleId}</span>
+      <div className="flex items-center justify-between gap-2 text-xs text-gray-400">
+        <span>{vehicle ? `${vehicle.name}` : booking.vehicleId}</span>
         <span>{fmtTime(booking.createdAt)}</span>
       </div>
       {needsAction && <p className="text-xs font-medium text-brand-dark">Tap to accept or reject →</p>}
