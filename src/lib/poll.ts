@@ -10,8 +10,10 @@ import { useEffect, useRef } from "react";
  *   requests never pile up).
  * - Pauses while the tab/app is in the background and refreshes right away
  *   when the person comes back.
+ * - Default is 7s: Apps Script is slow and rate-limited, so many people
+ *   polling every 4s can trigger "too many requests" errors.
  */
-export function usePolling(load: () => void | Promise<void>, deps: unknown[], intervalMs = 4000) {
+export function usePolling(load: () => void | Promise<void>, deps: unknown[], intervalMs = 7000) {
   const loadRef = useRef(load);
   loadRef.current = load;
 
