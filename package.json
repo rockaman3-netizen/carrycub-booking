@@ -6,22 +6,26 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy"
   },
   "dependencies": {
+    "@opennextjs/cloudflare": "^1.3.0",
+    "jose": "^5.9.0",
+    "leaflet": "^1.9.4",
     "next": "^15.5.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "leaflet": "^1.9.4",
-    "firebase": "^10.14.1"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0",
+    "@types/leaflet": "^1.9.12",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "@types/leaflet": "^1.9.12",
     "tailwindcss": "^4.0.0",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "wrangler": "^4.0.0"
   }
 }
