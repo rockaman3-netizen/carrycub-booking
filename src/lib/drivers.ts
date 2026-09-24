@@ -11,11 +11,22 @@ export type Driver = {
   available: boolean; // manual on-duty switch
 };
 
+// Throws on failure (instead of silently returning []) so the caller can
+// show *why* the list is empty — a real empty list looks identical to a
+// swallowed error otherwise.
 export async function listDrivers(): Promise<Driver[]> {
   const res = await fetch("/api/drivers", { headers: adminHeaders() });
-  if (!res.ok) return [];
-  const data = await res.json();
-  return (data.drivers as Driver[] | undefined) ?? [];
+  const raw = await res.text();
+  let data: { error?: string; drivers?: Driver[] } = {};
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    data = { error: raw ? raw.slice(0, 200) : `Server error (${res.status})` };
+  }
+  if (!res.ok) {
+    throw new Error(data.error ?? `Server error (${res.status})`);
+  }
+  return data.drivers ?? [];
 }
 
 export type NewDriverInput = {
