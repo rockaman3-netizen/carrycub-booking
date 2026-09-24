@@ -79,7 +79,11 @@ export type SheetDriver = {
   available: boolean;
 };
 
+type Cell = string | number | null;
+
 // ---- Apps Script client ----
+
+const SCRIPT_TIMEOUT_MS = 15000;
 
 function requiredEnv(name: string): string {
   const value = process.env[name];
@@ -101,28 +105,54 @@ function getScriptSecret(): string {
 
 type ScriptRequest =
   | { action: "getRows"; sheet: string }
-  | { action: "appendRow"; sheet: string; row: (string | number | null)[] }
-  | { action: "updateRow"; sheet: string; rowNumber: number; row: (string | number | null)[] }
-  | { action: "deleteRow"; sheet: string; rowNumber: number };
+  | { action: "getRowById"; sheet: string; id: string }
+  | { action: "appendRow"; sheet: string; row: Cell[] }
+  | { action: "updateById"; sheet: string; id: string; row: Cell[] }
+  | { action: "upsertById"; sheet: string; id: string; row: Cell[] }
+  | { action: "deleteById"; sheet: string; id: string };
+
+// Safe to run twice (same result), so one retry on a hiccup is fine.
+// appendRow is NOT in this list: retrying it could add a duplicate row.
+const RETRYABLE = new Set(["getRows", "getRowById", "updateById", "upsertById", "deleteById"]);
+
+async function callScriptOnce<T>(body: ScriptRequest): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SCRIPT_TIMEOUT_MS);
+  try {
+    const res = await fetch(getScriptUrl(), {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ ...body, secret: getScriptSecret() }),
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      throw new Error(`Apps Script request failed: ${res.status} ${res.statusText}`);
+    }
+    const data = await res.json();
+    if (data && typeof data === "object" && "error" in data && data.error) {
+      throw new Error(`Apps Script error: ${data.error}`);
+    }
+    return data as T;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 async function callScript<T>(body: ScriptRequest): Promise<T> {
-  const res = await fetch(getScriptUrl(), {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify({ ...body, secret: getScriptSecret() }),
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    throw new Error(`Apps Script request failed: ${res.status} ${res.statusText}`);
+  try {
+    return await callScriptOnce<T>(body);
+  } catch (err) {
+    if (!RETRYABLE.has(body.action)) throw err;
+    return callScriptOnce<T>(body);
   }
-  const data = await res.json();
-  if (data && typeof data === "object" && "error" in data && data.error) {
-    throw new Error(`Apps Script error: ${data.error}`);
-  }
-  return data as T;
 }
 
 // ---- Generic row helpers ----
+
+function clean(row: Cell[]): Cell[] {
+  return row.map((v) => (v === null || v === undefined ? "" : v));
+}
 
 async function getRows(sheetName: string): Promise<string[][]> {
   const data = await callScript<{ values?: unknown[][] }>({ action: "getRows", sheet: sheetName });
@@ -131,36 +161,27 @@ async function getRows(sheetName: string): Promise<string[][]> {
   return (data.values ?? []).map((row) => row.map((v) => (v === null || v === undefined ? "" : String(v))));
 }
 
-async function appendRow(sheetName: string, row: (string | number | null)[]): Promise<void> {
-  await callScript({
-    action: "appendRow",
-    sheet: sheetName,
-    row: row.map((v) => (v === null || v === undefined ? "" : v)),
-  });
+// One row, looked up by its ID (column A) inside the script. Always live.
+async function getRowById(sheetName: string, id: string): Promise<string[] | null> {
+  const data = await callScript<{ row?: unknown[] | null }>({ action: "getRowById", sheet: sheetName, id });
+  if (!data.row) return null;
+  return data.row.map((v) => (v === null || v === undefined ? "" : String(v)));
 }
 
-// index = 0-based position in the data rows. Returns -1 if not found.
-async function findRowIndex(sheetName: string, idColumnValue: string): Promise<{ index: number; rows: string[][] }> {
-  const rows = await getRows(sheetName);
-  const index = rows.findIndex((r) => r[0] === idColumnValue);
-  return { index, rows };
+async function appendRow(sheetName: string, row: Cell[]): Promise<void> {
+  await callScript({ action: "appendRow", sheet: sheetName, row: clean(row) });
 }
 
-async function updateRow(
-  sheetName: string,
-  rowNumber: number, // 1-indexed data row, i.e. findRowIndex().index + 1
-  row: (string | number | null)[],
-): Promise<void> {
-  await callScript({
-    action: "updateRow",
-    sheet: sheetName,
-    rowNumber,
-    row: row.map((v) => (v === null || v === undefined ? "" : v)),
-  });
+async function updateRowById(sheetName: string, id: string, row: Cell[]): Promise<void> {
+  await callScript({ action: "updateById", sheet: sheetName, id, row: clean(row) });
 }
 
-async function deleteRow(sheetName: string, rowNumber: number): Promise<void> {
-  await callScript({ action: "deleteRow", sheet: sheetName, rowNumber });
+async function upsertRowById(sheetName: string, id: string, row: Cell[]): Promise<void> {
+  await callScript({ action: "upsertById", sheet: sheetName, id, row: clean(row) });
+}
+
+async function deleteRowById(sheetName: string, id: string): Promise<void> {
+  await callScript({ action: "deleteById", sheet: sheetName, id });
 }
 
 // ---- Bookings ----
@@ -207,14 +228,19 @@ function rowToBooking(row: string[]): SheetBooking {
   };
 }
 
-function bookingToRow(b: SheetBooking): (string | number | null)[] {
+function bookingToRow(b: SheetBooking): Cell[] {
   return BOOKING_COLUMNS.map((col) => {
     if (col === "status") return SHEET_STATUS_LABELS[b.status] ?? b.status;
     const v = b[col as keyof SheetBooking];
-    return v === undefined ? null : (v as string | number | null);
+    return v === undefined ? null : (v as Cell);
   });
 }
 
+function newestFirst(a: SheetBooking, b: SheetBooking): number {
+  return a.createdAt < b.createdAt ? 1 : -1;
+}
+
+// Admin list: bookings + live driver locations.
 export async function listBookings(): Promise<SheetBooking[]> {
   const [rows, locations] = await Promise.all([getRows(BOOKINGS_SHEET), listLocationsMap()]);
   return rows
@@ -224,23 +250,24 @@ export async function listBookings(): Promise<SheetBooking[]> {
       b.driverLocation = locations.get(b.id) ?? null;
       return b;
     })
-    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)); // newest first
+    .sort(newestFirst);
 }
 
+// Driver list: only the Bookings sheet (no locations needed here).
 export async function listBookingsForDriver(driverId: string): Promise<SheetBooking[]> {
-  const all = await listBookings();
-  return all.filter((b) => b.driverId === driverId);
+  const rows = await getRows(BOOKINGS_SHEET);
+  const driverCol = BOOKING_COLUMNS.indexOf("driverId");
+  return rows
+    .filter((r) => r[0] && r[driverCol] === driverId)
+    .map((r) => rowToBooking(r))
+    .sort(newestFirst);
 }
 
 export async function getBooking(id: string): Promise<SheetBooking | null> {
-  // Fetch the booking row and the driver's location at the same time
-  // (2 requests in parallel instead of one after the other).
-  const [{ index, rows }, location] = await Promise.all([
-    findRowIndex(BOOKINGS_SHEET, id),
-    getLocation(id),
-  ]);
-  if (index === -1) return null;
-  const b = rowToBooking(rows[index]);
+  // Booking row and driver location fetched at the same time.
+  const [row, location] = await Promise.all([getRowById(BOOKINGS_SHEET, id), getLocation(id)]);
+  if (!row) return null;
+  const b = rowToBooking(row);
   b.driverLocation = location;
   return b;
 }
@@ -262,8 +289,8 @@ export async function createBooking(input: {
   estimatedFare: number | null;
 }): Promise<SheetBooking> {
   // Guard against duplicate booking IDs.
-  const { index: existingIndex } = await findRowIndex(BOOKINGS_SHEET, input.id);
-  if (existingIndex !== -1) {
+  const existing = await getRowById(BOOKINGS_SHEET, input.id);
+  if (existing) {
     throw new Error("DUPLICATE_BOOKING_ID");
   }
   const booking: SheetBooking = {
@@ -280,20 +307,20 @@ export async function createBooking(input: {
   return booking;
 }
 
-// Read-modify-write against the current row.
+// Read the live row, apply the change, write it back by ID.
 async function mutateBooking(
   id: string,
   mutate: (current: SheetBooking) => Partial<SheetBooking> | { error: string },
 ): Promise<{ booking: SheetBooking | null; error?: string }> {
-  const { index, rows } = await findRowIndex(BOOKINGS_SHEET, id);
-  if (index === -1) return { booking: null, error: "Booking not found" };
-  const current = rowToBooking(rows[index]);
+  const row = await getRowById(BOOKINGS_SHEET, id);
+  if (!row) return { booking: null, error: "Booking not found" };
+  const current = rowToBooking(row);
   const patch = mutate(current);
   if ("error" in patch) return { booking: current, error: patch.error };
   const updated: SheetBooking = { ...current, ...patch, updatedAt: new Date().toISOString() };
-  // Save the row and read the location in parallel.
+  // Save the row and read the location at the same time.
   const [, location] = await Promise.all([
-    updateRow(BOOKINGS_SHEET, index + 1, bookingToRow(updated)),
+    updateRowById(BOOKINGS_SHEET, id, bookingToRow(updated)),
     getLocation(id),
   ]);
   updated.driverLocation = location;
@@ -421,28 +448,29 @@ function rowToDriver(row: string[]): SheetDriver {
   };
 }
 
+function driverToRow(driver: SheetDriver): Cell[] {
+  return DRIVER_COLUMNS.map((col) =>
+    col === "available" ? (driver.available ? "TRUE" : "FALSE") : (driver[col as keyof SheetDriver] as Cell),
+  );
+}
+
 export async function listDrivers(): Promise<SheetDriver[]> {
   const rows = await getRows(DRIVERS_SHEET);
-  return rows.filter((r) => r[0]).map(rowToDriver);
+  return rows.filter((r) => r[0]).map((r) => rowToDriver(r));
 }
 
 export async function createDriver(driver: SheetDriver): Promise<SheetDriver> {
-  const { index: existingIndex } = await findRowIndex(DRIVERS_SHEET, driver.id);
-  if (existingIndex !== -1) {
+  const existing = await getRowById(DRIVERS_SHEET, driver.id);
+  if (existing) {
     throw new Error("DUPLICATE_DRIVER_ID");
   }
-  await appendRow(
-    DRIVERS_SHEET,
-    DRIVER_COLUMNS.map((col) =>
-      col === "available" ? (driver.available ? "TRUE" : "FALSE") : driver[col as keyof SheetDriver],
-    ) as (string | number | null)[],
-  );
+  await appendRow(DRIVERS_SHEET, driverToRow(driver));
   return driver;
 }
 
 export async function getDriver(id: string): Promise<SheetDriver | null> {
-  const drivers = await listDrivers();
-  return drivers.find((d) => d.id === id) ?? null;
+  const row = await getRowById(DRIVERS_SHEET, id);
+  return row ? rowToDriver(row) : null;
 }
 
 export async function getDriverByPhone(phone: string): Promise<SheetDriver | null> {
@@ -453,18 +481,10 @@ export async function getDriverByPhone(phone: string): Promise<SheetDriver | nul
 }
 
 export async function setDriverAvailability(id: string, available: boolean): Promise<SheetDriver | null> {
-  const { index, rows } = await findRowIndex(DRIVERS_SHEET, id);
-  if (index === -1) return null;
-  const driver = { ...rowToDriver(rows[index]), available };
-  await updateRow(
-    DRIVERS_SHEET,
-    index + 1, // 1-indexed data row
-    DRIVER_COLUMNS.map((col) => (col === "available" ? (available ? "TRUE" : "FALSE") : driver[col as keyof SheetDriver])) as (
-      | string
-      | number
-      | null
-    )[],
-  );
+  const row = await getRowById(DRIVERS_SHEET, id);
+  if (!row) return null;
+  const driver = { ...rowToDriver(row), available };
+  await updateRowById(DRIVERS_SHEET, id, driverToRow(driver));
   return driver;
 }
 
@@ -492,9 +512,9 @@ async function listLocationsMap(): Promise<Map<string, { lat: number; lng: numbe
 }
 
 async function getLocation(bookingId: string): Promise<{ lat: number; lng: number; updatedAt: string } | null> {
-  const { index, rows } = await findRowIndex(LOCATIONS_SHEET, bookingId);
-  if (index === -1) return null;
-  const loc = rowToLocation(rows[index]);
+  const row = await getRowById(LOCATIONS_SHEET, bookingId);
+  if (!row) return null;
+  const loc = rowToLocation(row);
   return { lat: loc.lat, lng: loc.lng, updatedAt: loc.updatedAt };
 }
 
@@ -505,18 +525,11 @@ export async function upsertLocation(
   lng: number,
 ): Promise<{ lat: number; lng: number; updatedAt: string }> {
   const updatedAt = new Date().toISOString();
-  const { index } = await findRowIndex(LOCATIONS_SHEET, bookingId);
-  const row = [bookingId, driverId, lat, lng, updatedAt];
-  if (index === -1) {
-    await appendRow(LOCATIONS_SHEET, row);
-  } else {
-    await updateRow(LOCATIONS_SHEET, index + 1, row);
-  }
+  // One call: the script updates the row if it exists, else adds it.
+  await upsertRowById(LOCATIONS_SHEET, bookingId, [bookingId, driverId, lat, lng, updatedAt]);
   return { lat, lng, updatedAt };
 }
 
 async function clearLocation(bookingId: string): Promise<void> {
-  const { index } = await findRowIndex(LOCATIONS_SHEET, bookingId);
-  if (index === -1) return;
-  await deleteRow(LOCATIONS_SHEET, index + 1);
+  await deleteRowById(LOCATIONS_SHEET, bookingId);
 }
