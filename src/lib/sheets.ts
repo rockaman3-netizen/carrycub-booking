@@ -233,10 +233,15 @@ export async function listBookingsForDriver(driverId: string): Promise<SheetBook
 }
 
 export async function getBooking(id: string): Promise<SheetBooking | null> {
-  const { index, rows } = await findRowIndex(BOOKINGS_SHEET, id);
+  // Fetch the booking row and the driver's location at the same time
+  // (2 requests in parallel instead of one after the other).
+  const [{ index, rows }, location] = await Promise.all([
+    findRowIndex(BOOKINGS_SHEET, id),
+    getLocation(id),
+  ]);
   if (index === -1) return null;
   const b = rowToBooking(rows[index]);
-  b.driverLocation = await getLocation(id);
+  b.driverLocation = location;
   return b;
 }
 
@@ -286,8 +291,12 @@ async function mutateBooking(
   const patch = mutate(current);
   if ("error" in patch) return { booking: current, error: patch.error };
   const updated: SheetBooking = { ...current, ...patch, updatedAt: new Date().toISOString() };
-  await updateRow(BOOKINGS_SHEET, index + 1, bookingToRow(updated));
-  updated.driverLocation = await getLocation(id);
+  // Save the row and read the location in parallel.
+  const [, location] = await Promise.all([
+    updateRow(BOOKINGS_SHEET, index + 1, bookingToRow(updated)),
+    getLocation(id),
+  ]);
+  updated.driverLocation = location;
   return { booking: updated };
 }
 
@@ -295,15 +304,19 @@ export async function assignDriver(
   bookingId: string,
   driver: SheetDriver,
 ): Promise<{ booking: SheetBooking | null; error?: string }> {
-  const result = await mutateBooking(bookingId, () => ({
-    driverId: driver.id,
-    driverName: driver.name,
-    driverPhone: driver.phone,
-    driverVehicleNo: driver.vehicleNo,
-    driverVehicleType: driver.vehicleType,
-    status: "assigned",
-  }));
-  if (result.booking) await clearLocation(bookingId);
+  // Assign and clear any old location at the same time.
+  const [result] = await Promise.all([
+    mutateBooking(bookingId, () => ({
+      driverId: driver.id,
+      driverName: driver.name,
+      driverPhone: driver.phone,
+      driverVehicleNo: driver.vehicleNo,
+      driverVehicleType: driver.vehicleType,
+      status: "assigned",
+    })),
+    clearLocation(bookingId),
+  ]);
+  if (result.booking) result.booking.driverLocation = null;
   return result;
 }
 
