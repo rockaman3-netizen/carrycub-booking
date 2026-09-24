@@ -28,6 +28,9 @@ export default function TrackingView({ id }: { id: string }) {
   const [booking, setBooking] = useState<StoredBooking | null | undefined>(undefined);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [ratingSubmitted, setRatingSubmitted] = useState(false);
 
   useEffect(() => {
     rememberRecentBookingId(id);
@@ -99,7 +102,79 @@ export default function TrackingView({ id }: { id: string }) {
     if (updated) setBooking(updated);
   }
 
-  const tone = isCancelled ? "bg-red-50" : isDelivered ? "bg-green-50" : "bg-orange-50";
+  // ---------- Dedicated full-screen "Delivered" experience ----------
+  if (isDelivered) {
+    return (
+      <main className="mx-auto flex h-dvh w-full max-w-md flex-col bg-white px-6 pb-[max(env(safe-area-inset-bottom),1.5rem)] pt-[max(env(safe-area-inset-top),2rem)]">
+        <div className="flex flex-1 flex-col items-center justify-center text-center">
+          <div className="flex h-20 w-20 items-center justify-center rounded-full bg-green-50 text-4xl">
+            ✅
+          </div>
+          <h1 className="mt-6 text-2xl font-bold text-navy">Delivered</h1>
+          <p className="mt-2 max-w-xs text-sm text-gray-500">
+            Your package reached safely. Thank you for choosing CarryCub.
+          </p>
+          <p className="mt-4 text-xs tracking-wider text-gray-400">{booking.id}</p>
+
+          {driver?.name && (
+            <div className="mt-8 flex items-center gap-3">
+              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-gray-100 text-xl">
+                🧑
+              </span>
+              <div className="text-left">
+                <p className="text-sm font-semibold text-navy">{driver.name}</p>
+                <p className="text-xs text-gray-500">
+                  {driverVehicle?.name} · {driver.vehicleNo ?? TEST_DRIVER.vehicleNo}
+                </p>
+              </div>
+            </div>
+          )}
+
+          <div className="mt-10 w-full">
+            {ratingSubmitted ? (
+              <p className="text-sm font-medium text-brand-dark">
+                Thanks for rating your trip! 🙌
+              </p>
+            ) : (
+              <>
+                <p className="text-sm font-medium text-gray-600">Rate your driver</p>
+                <div className="mt-3 flex justify-center gap-2">
+                  {[1, 2, 3, 4, 5].map((n) => {
+                    const filled = (hoverRating || rating) >= n;
+                    return (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => {
+                          setRating(n);
+                          setRatingSubmitted(true);
+                        }}
+                        onMouseEnter={() => setHoverRating(n)}
+                        onMouseLeave={() => setHoverRating(0)}
+                        className="text-3xl leading-none"
+                        aria-label={`Rate ${n} star${n > 1 ? "s" : ""}`}
+                      >
+                        {filled ? "⭐" : "☆"}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        <Link
+          href="/"
+          className="mt-6 block w-full rounded-2xl bg-brand py-3.5 text-center text-base font-semibold text-white active:bg-brand-dark"
+        >
+          Book Again
+        </Link>
+      </main>
+    );
+  }
+
+  const tone = isCancelled ? "bg-red-50" : "bg-orange-50";
 
   return (
     <main className="mx-auto flex h-dvh w-full max-w-md flex-col overflow-hidden bg-[#f3f4f6]">
@@ -155,7 +230,7 @@ export default function TrackingView({ id }: { id: string }) {
                 <span
                   key={s.id}
                   className={`h-1.5 flex-1 rounded-full ${
-                    isDelivered || i <= flowIndex ? "bg-brand" : "bg-gray-200"
+                    i <= flowIndex ? "bg-brand" : "bg-gray-200"
                   }`}
                 />
               ))}
@@ -244,8 +319,8 @@ export default function TrackingView({ id }: { id: string }) {
                     <span className="pt-0.5 text-sm text-gray-600">Booking Confirmed</span>
                   </li>
                   {FLOW.map((s, i) => {
-                    const done = isDelivered || i < flowIndex;
-                    const current = !isDelivered && i === flowIndex;
+                    const done = i < flowIndex;
+                    const current = i === flowIndex;
                     const last = i === FLOW.length - 1;
                     return (
                       <li key={s.id} className="relative flex items-start gap-4 pb-5 last:pb-0">
@@ -354,7 +429,7 @@ export default function TrackingView({ id }: { id: string }) {
             </div>
           )}
 
-          {(isCancelled || isDelivered) && (
+          {isCancelled && (
             <Link
               href="/"
               className="mt-4 block w-full rounded-2xl bg-brand py-3.5 text-center text-base font-semibold text-white active:bg-brand-dark"
