@@ -67,13 +67,33 @@ const docName = (col: string, id: string) =>
 
 let cachedToken: { value: string; exp: number } | null = null;
 
+// Accepts the key pasted as: the bare key, the key with quotes/trailing comma,
+// literal "\n" text, or the whole service-account JSON file.
+function cleanPrivateKey(): string {
+  let raw = env("FIREBASE_PRIVATE_KEY").trim();
+  if (raw.startsWith("{")) {
+    try {
+      raw = JSON.parse(raw).private_key || raw;
+    } catch {}
+  }
+  const found = raw
+    .replace(/\\n/g, "\n")
+    .match(/-----BEGIN PRIVATE KEY-----([\s\S]*?)-----END PRIVATE KEY-----/);
+  if (!found) throw new Error("FIREBASE_PRIVATE_KEY: BEGIN/END line missing");
+  const body = found[1].replace(/[^A-Za-z0-9+/=]/g, "");
+  if (body.length < 1000) {
+    throw new Error(`FIREBASE_PRIVATE_KEY incomplete (${body.length} chars)`);
+  }
+  const lines = (body.match(/.{1,64}/g) as string[]).join("\n");
+  return `-----BEGIN PRIVATE KEY-----\n${lines}\n-----END PRIVATE KEY-----\n`;
+}
+
 async function getToken(): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   if (cachedToken && cachedToken.exp - 60 > now) return cachedToken.value;
 
-  const email = env("FIREBASE_CLIENT_EMAIL");
-  const pem = env("FIREBASE_PRIVATE_KEY").replace(/^"|"$/g, "").replace(/\\n/g, "\n");
-  const key = await importPKCS8(pem, "RS256");
+  const email = env("FIREBASE_CLIENT_EMAIL").trim();
+  const key = await importPKCS8(cleanPrivateKey(), "RS256");
 
   const assertion = await new SignJWT({ scope: "https://www.googleapis.com/auth/datastore" })
     .setProtectedHeader({ alg: "RS256", typ: "JWT" })
