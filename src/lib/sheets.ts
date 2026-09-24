@@ -1,49 +1,29 @@
 // SERVER ONLY. Never import this file from a "use client" component.
-// Data source: Google Apps Script Web App (see APPS_SCRIPT_SETUP.md).
-// Tabs: Bookings, Drivers, LocationUpdates.
+// Data source: Firebase Firestore. Collections: bookings, drivers, locations.
+// (File name sheets.ts is kept so other imports don't change.)
 
+import { initializeApp, getApps, getApp } from "firebase/app";
+import {
+  getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc,
+  deleteDoc, query, where, runTransaction,
+} from "firebase/firestore";
 import type { StatusId } from "@/lib/status";
 
-const BOOKINGS_SHEET = "Bookings";
-const DRIVERS_SHEET = "Drivers";
-const LOCATIONS_SHEET = "LocationUpdates";
+const app = getApps().length
+  ? getApp()
+  : initializeApp({
+      apiKey: "AIzaSyDG2BB4ZBKJIcsJWqqt_QFB8cZ5dp8RZbU",
+      authDomain: "carrycub-truck-booking.firebaseapp.com",
+      projectId: "carrycub-truck-booking",
+      storageBucket: "carrycub-truck-booking.firebasestorage.app",
+      messagingSenderId: "1074926867268",
+      appId: "1:1074926867268:web:78324dd7403039dc037d11",
+    });
+const db = getFirestore(app);
 
-const SHEET_STATUS_LABELS: Partial<Record<StatusId, string>> = {
-  accepted: "Driver Accepted",
-  arriving: "Arriving at Pickup",
-  arrived: "Arrived at Pickup",
-  started: "Delivery Started",
-  delivered: "Delivered",
-};
-
-// Column order must match the sheet's header row (A onward).
-const BOOKING_COLUMNS = [
-  "id",
-  "createdAt",
-  "updatedAt",
-  "status",
-  "pickup",
-  "drop",
-  "pickupLat",
-  "pickupLng",
-  "dropLat",
-  "dropLng",
-  "vehicleId",
-  "name",
-  "mobile",
-  "notes",
-  "distanceKm",
-  "estimatedFare",
-  "driverId",
-  "driverName",
-  "driverPhone",
-  "driverVehicleNo",
-  "driverVehicleType",
-] as const;
-
-const DRIVER_COLUMNS = ["id", "name", "phone", "vehicleNo", "vehicleType", "available"] as const;
-
-const LOCATION_COLUMNS = ["bookingId", "driverId", "lat", "lng", "updatedAt"] as const;
+const BOOKINGS = "bookings";
+const DRIVERS = "drivers";
+const LOCATIONS = "locations";
 
 export type SheetBooking = {
   id: string;
@@ -79,195 +59,50 @@ export type SheetDriver = {
   available: boolean;
 };
 
-type Cell = string | number | null;
+type Loc = { lat: number; lng: number; updatedAt: string };
+type Result = { booking: SheetBooking | null; error?: string };
 
-// ---- Apps Script client ----
+// ---- helpers ----
 
-const SCRIPT_TIMEOUT_MS = 15000;
-
-function requiredEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(
-      `Missing ${name}. Google Sheets isn't configured — see APPS_SCRIPT_SETUP.md for the required environment variables.`,
-    );
-  }
-  return value;
+function toBooking(id: string, data: Record<string, unknown>): SheetBooking {
+  return { ...(data as Omit<SheetBooking, "id">), id };
 }
 
-function getScriptUrl(): string {
-  return requiredEnv("APPS_SCRIPT_URL");
-}
-
-function getScriptSecret(): string {
-  return requiredEnv("APPS_SCRIPT_SECRET");
-}
-
-type ScriptRequest =
-  | { action: "getRows"; sheet: string }
-  | { action: "getRowById"; sheet: string; id: string }
-  | { action: "appendRow"; sheet: string; row: Cell[] }
-  | { action: "updateById"; sheet: string; id: string; row: Cell[] }
-  | { action: "upsertById"; sheet: string; id: string; row: Cell[] }
-  | { action: "deleteById"; sheet: string; id: string };
-
-// Safe to run twice (same result), so one retry on a hiccup is fine.
-// appendRow is NOT in this list: retrying it could add a duplicate row.
-const RETRYABLE = new Set(["getRows", "getRowById", "updateById", "upsertById", "deleteById"]);
-
-async function callScriptOnce<T>(body: ScriptRequest): Promise<T> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), SCRIPT_TIMEOUT_MS);
-  try {
-    const res = await fetch(getScriptUrl(), {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ ...body, secret: getScriptSecret() }),
-      cache: "no-store",
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      throw new Error(`Apps Script request failed: ${res.status} ${res.statusText}`);
-    }
-    const data = await res.json();
-    if (data && typeof data === "object" && "error" in data && data.error) {
-      throw new Error(`Apps Script error: ${data.error}`);
-    }
-    return data as T;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function callScript<T>(body: ScriptRequest): Promise<T> {
-  try {
-    return await callScriptOnce<T>(body);
-  } catch (err) {
-    if (!RETRYABLE.has(body.action)) throw err;
-    return callScriptOnce<T>(body);
-  }
-}
-
-// ---- Generic row helpers ----
-
-function clean(row: Cell[]): Cell[] {
-  return row.map((v) => (v === null || v === undefined ? "" : v));
-}
-
-async function getRows(sheetName: string): Promise<string[][]> {
-  const data = await callScript<{ values?: unknown[][] }>({ action: "getRows", sheet: sheetName });
-  // Google Sheets returns real numbers/booleans for numeric-looking cells
-  // (e.g. mobile 8084750977, available TRUE). Convert every cell to a string.
-  return (data.values ?? []).map((row) => row.map((v) => (v === null || v === undefined ? "" : String(v))));
-}
-
-// One row, looked up by its ID (column A) inside the script. Always live.
-async function getRowById(sheetName: string, id: string): Promise<string[] | null> {
-  const data = await callScript<{ row?: unknown[] | null }>({ action: "getRowById", sheet: sheetName, id });
-  if (!data.row) return null;
-  return data.row.map((v) => (v === null || v === undefined ? "" : String(v)));
-}
-
-async function appendRow(sheetName: string, row: Cell[]): Promise<void> {
-  await callScript({ action: "appendRow", sheet: sheetName, row: clean(row) });
-}
-
-async function updateRowById(sheetName: string, id: string, row: Cell[]): Promise<void> {
-  await callScript({ action: "updateById", sheet: sheetName, id, row: clean(row) });
-}
-
-async function upsertRowById(sheetName: string, id: string, row: Cell[]): Promise<void> {
-  await callScript({ action: "upsertById", sheet: sheetName, id, row: clean(row) });
-}
-
-async function deleteRowById(sheetName: string, id: string): Promise<void> {
-  await callScript({ action: "deleteById", sheet: sheetName, id });
-}
-
-// ---- Bookings ----
-
-function num(v: string | undefined): number | null {
-  if (v === undefined || v === "") return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
-
-function sheetStatusToId(raw: string): StatusId {
-  const v = raw.trim();
-  if (!v) return "searching";
-  for (const [id, label] of Object.entries(SHEET_STATUS_LABELS)) {
-    if (label && v.toLowerCase() === label.toLowerCase()) return id as StatusId;
-  }
-  return v as StatusId;
-}
-
-function rowToBooking(row: string[]): SheetBooking {
-  const get = (col: (typeof BOOKING_COLUMNS)[number]) => row[BOOKING_COLUMNS.indexOf(col)] ?? "";
-  return {
-    id: get("id"),
-    createdAt: get("createdAt"),
-    updatedAt: get("updatedAt"),
-    status: sheetStatusToId(get("status")),
-    pickup: get("pickup"),
-    drop: get("drop"),
-    pickupLat: num(get("pickupLat")),
-    pickupLng: num(get("pickupLng")),
-    dropLat: num(get("dropLat")),
-    dropLng: num(get("dropLng")),
-    vehicleId: get("vehicleId"),
-    name: get("name"),
-    mobile: get("mobile"),
-    notes: get("notes"),
-    distanceKm: num(get("distanceKm")),
-    estimatedFare: num(get("estimatedFare")),
-    driverId: get("driverId") || null,
-    driverName: get("driverName") || null,
-    driverPhone: get("driverPhone") || null,
-    driverVehicleNo: get("driverVehicleNo") || null,
-    driverVehicleType: get("driverVehicleType") || null,
-  };
-}
-
-function bookingToRow(b: SheetBooking): Cell[] {
-  return BOOKING_COLUMNS.map((col) => {
-    if (col === "status") return SHEET_STATUS_LABELS[b.status] ?? b.status;
-    const v = b[col as keyof SheetBooking];
-    return v === undefined ? null : (v as Cell);
-  });
+function toDoc(b: SheetBooking) {
+  const copy = { ...b };
+  delete copy.driverLocation; // location lives in its own collection
+  return copy;
 }
 
 function newestFirst(a: SheetBooking, b: SheetBooking): number {
   return a.createdAt < b.createdAt ? 1 : -1;
 }
 
-// Admin list: bookings + live driver locations.
+// ---- Bookings ----
+
 export async function listBookings(): Promise<SheetBooking[]> {
-  const [rows, locations] = await Promise.all([getRows(BOOKINGS_SHEET), listLocationsMap()]);
-  return rows
-    .filter((r) => r[0])
-    .map((r) => {
-      const b = rowToBooking(r);
+  const [snap, locations] = await Promise.all([
+    getDocs(collection(db, BOOKINGS)),
+    listLocationsMap(),
+  ]);
+  return snap.docs
+    .map((d) => {
+      const b = toBooking(d.id, d.data());
       b.driverLocation = locations.get(b.id) ?? null;
       return b;
     })
     .sort(newestFirst);
 }
 
-// Driver list: only the Bookings sheet (no locations needed here).
 export async function listBookingsForDriver(driverId: string): Promise<SheetBooking[]> {
-  const rows = await getRows(BOOKINGS_SHEET);
-  const driverCol = BOOKING_COLUMNS.indexOf("driverId");
-  return rows
-    .filter((r) => r[0] && r[driverCol] === driverId)
-    .map((r) => rowToBooking(r))
-    .sort(newestFirst);
+  const snap = await getDocs(query(collection(db, BOOKINGS), where("driverId", "==", driverId)));
+  return snap.docs.map((d) => toBooking(d.id, d.data())).sort(newestFirst);
 }
 
 export async function getBooking(id: string): Promise<SheetBooking | null> {
-  // Booking row and driver location fetched at the same time.
-  const [row, location] = await Promise.all([getRowById(BOOKINGS_SHEET, id), getLocation(id)]);
-  if (!row) return null;
-  const b = rowToBooking(row);
+  const [snap, location] = await Promise.all([getDoc(doc(db, BOOKINGS, id)), getLocation(id)]);
+  if (!snap.exists()) return null;
+  const b = toBooking(snap.id, snap.data());
   b.driverLocation = location;
   return b;
 }
@@ -288,11 +123,6 @@ export async function createBooking(input: {
   distanceKm: number | null;
   estimatedFare: number | null;
 }): Promise<SheetBooking> {
-  // Guard against duplicate booking IDs.
-  const existing = await getRowById(BOOKINGS_SHEET, input.id);
-  if (existing) {
-    throw new Error("DUPLICATE_BOOKING_ID");
-  }
   const booking: SheetBooking = {
     ...input,
     updatedAt: input.createdAt,
@@ -303,35 +133,37 @@ export async function createBooking(input: {
     driverVehicleNo: null,
     driverVehicleType: null,
   };
-  await appendRow(BOOKINGS_SHEET, bookingToRow(booking));
+  const ref = doc(db, BOOKINGS, input.id);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (snap.exists()) throw new Error("DUPLICATE_BOOKING_ID");
+    tx.set(ref, toDoc(booking));
+  });
   return booking;
 }
 
-// Read the live row, apply the change, write it back by ID.
+// Read the live doc, apply the change, write back, all in one transaction
+// (so two people can't overwrite each other's change).
 async function mutateBooking(
   id: string,
   mutate: (current: SheetBooking) => Partial<SheetBooking> | { error: string },
-): Promise<{ booking: SheetBooking | null; error?: string }> {
-  const row = await getRowById(BOOKINGS_SHEET, id);
-  if (!row) return { booking: null, error: "Booking not found" };
-  const current = rowToBooking(row);
-  const patch = mutate(current);
-  if ("error" in patch) return { booking: current, error: patch.error };
-  const updated: SheetBooking = { ...current, ...patch, updatedAt: new Date().toISOString() };
-  // Save the row and read the location at the same time.
-  const [, location] = await Promise.all([
-    updateRowById(BOOKINGS_SHEET, id, bookingToRow(updated)),
-    getLocation(id),
-  ]);
-  updated.driverLocation = location;
-  return { booking: updated };
+): Promise<Result> {
+  const ref = doc(db, BOOKINGS, id);
+  const outcome = await runTransaction<Result>(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) return { booking: null, error: "Booking not found" };
+    const current = toBooking(snap.id, snap.data());
+    const patch = mutate(current);
+    if ("error" in patch) return { booking: current, error: patch.error };
+    const updated: SheetBooking = { ...current, ...patch, updatedAt: new Date().toISOString() };
+    tx.set(ref, toDoc(updated));
+    return { booking: updated };
+  });
+  if (outcome.booking && !outcome.error) outcome.booking.driverLocation = await getLocation(id);
+  return outcome;
 }
 
-export async function assignDriver(
-  bookingId: string,
-  driver: SheetDriver,
-): Promise<{ booking: SheetBooking | null; error?: string }> {
-  // Assign and clear any old location at the same time.
+export async function assignDriver(bookingId: string, driver: SheetDriver): Promise<Result> {
   const [result] = await Promise.all([
     mutateBooking(bookingId, () => ({
       driverId: driver.id,
@@ -339,7 +171,7 @@ export async function assignDriver(
       driverPhone: driver.phone,
       driverVehicleNo: driver.vehicleNo,
       driverVehicleType: driver.vehicleType,
-      status: "assigned",
+      status: "assigned" as StatusId,
     })),
     clearLocation(bookingId),
   ]);
@@ -347,19 +179,9 @@ export async function assignDriver(
   return result;
 }
 
-const NEEDS_DRIVER: StatusId[] = [
-  "assigned",
-  "accepted",
-  "arriving",
-  "arrived",
-  "started",
-  "delivered",
-];
+const NEEDS_DRIVER: StatusId[] = ["assigned", "accepted", "arriving", "arrived", "started", "delivered"];
 
-export async function adminChangeStatus(
-  bookingId: string,
-  status: StatusId,
-): Promise<{ booking: SheetBooking | null; error?: string }> {
+export async function adminChangeStatus(bookingId: string, status: StatusId): Promise<Result> {
   const result = await mutateBooking(bookingId, (current) => {
     if (NEEDS_DRIVER.includes(status) && !current.driverId) {
       return { error: "Assign a driver first" };
@@ -377,7 +199,7 @@ export async function adminChangeStatus(
   return result;
 }
 
-export async function customerCancel(bookingId: string): Promise<{ booking: SheetBooking | null; error?: string }> {
+export async function customerCancel(bookingId: string): Promise<Result> {
   const result = await mutateBooking(bookingId, (current) => {
     if (current.status === "delivered" || current.status === "cancelled") {
       return { error: "This booking can no longer be cancelled" };
@@ -388,10 +210,7 @@ export async function customerCancel(bookingId: string): Promise<{ booking: Shee
   return result;
 }
 
-export async function driverAccept(
-  bookingId: string,
-  driverId: string,
-): Promise<{ booking: SheetBooking | null; error?: string }> {
+export async function driverAccept(bookingId: string, driverId: string): Promise<Result> {
   return mutateBooking(bookingId, (current) => {
     if (current.driverId !== driverId) return { error: "This booking isn't assigned to you" };
     if (current.status !== "assigned") return { error: "Booking already accepted or moved on" };
@@ -399,10 +218,7 @@ export async function driverAccept(
   });
 }
 
-export async function driverReject(
-  bookingId: string,
-  driverId: string,
-): Promise<{ booking: SheetBooking | null; error?: string }> {
+export async function driverReject(bookingId: string, driverId: string): Promise<Result> {
   const result = await mutateBooking(bookingId, (current) => {
     if (current.driverId !== driverId) return { error: "This booking isn't assigned to you" };
     if (current.status !== "assigned") return { error: "Can only reject before accepting" };
@@ -424,7 +240,7 @@ export async function driverAdvance(
   driverId: string,
   status: StatusId,
   expectedNext: StatusId | null,
-): Promise<{ booking: SheetBooking | null; error?: string }> {
+): Promise<Result> {
   const result = await mutateBooking(bookingId, (current) => {
     if (current.driverId !== driverId) return { error: "This booking isn't assigned to you" };
     if (expectedNext !== status) return { error: "Statuses must be updated in order" };
@@ -436,41 +252,24 @@ export async function driverAdvance(
 
 // ---- Drivers ----
 
-function rowToDriver(row: string[]): SheetDriver {
-  const get = (col: (typeof DRIVER_COLUMNS)[number]) => row[DRIVER_COLUMNS.indexOf(col)] ?? "";
-  return {
-    id: get("id"),
-    name: get("name"),
-    phone: get("phone"),
-    vehicleNo: get("vehicleNo"),
-    vehicleType: get("vehicleType"),
-    available: get("available").trim().toUpperCase() === "TRUE",
-  };
-}
-
-function driverToRow(driver: SheetDriver): Cell[] {
-  return DRIVER_COLUMNS.map((col) =>
-    col === "available" ? (driver.available ? "TRUE" : "FALSE") : (driver[col as keyof SheetDriver] as Cell),
-  );
-}
-
 export async function listDrivers(): Promise<SheetDriver[]> {
-  const rows = await getRows(DRIVERS_SHEET);
-  return rows.filter((r) => r[0]).map((r) => rowToDriver(r));
+  const snap = await getDocs(collection(db, DRIVERS));
+  return snap.docs.map((d) => ({ ...(d.data() as Omit<SheetDriver, "id">), id: d.id }));
 }
 
 export async function createDriver(driver: SheetDriver): Promise<SheetDriver> {
-  const existing = await getRowById(DRIVERS_SHEET, driver.id);
-  if (existing) {
-    throw new Error("DUPLICATE_DRIVER_ID");
-  }
-  await appendRow(DRIVERS_SHEET, driverToRow(driver));
+  const ref = doc(db, DRIVERS, driver.id);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (snap.exists()) throw new Error("DUPLICATE_DRIVER_ID");
+    tx.set(ref, driver);
+  });
   return driver;
 }
 
 export async function getDriver(id: string): Promise<SheetDriver | null> {
-  const row = await getRowById(DRIVERS_SHEET, id);
-  return row ? rowToDriver(row) : null;
+  const snap = await getDoc(doc(db, DRIVERS, id));
+  return snap.exists() ? { ...(snap.data() as Omit<SheetDriver, "id">), id: snap.id } : null;
 }
 
 export async function getDriverByPhone(phone: string): Promise<SheetDriver | null> {
@@ -481,41 +280,30 @@ export async function getDriverByPhone(phone: string): Promise<SheetDriver | nul
 }
 
 export async function setDriverAvailability(id: string, available: boolean): Promise<SheetDriver | null> {
-  const row = await getRowById(DRIVERS_SHEET, id);
-  if (!row) return null;
-  const driver = { ...rowToDriver(row), available };
-  await updateRowById(DRIVERS_SHEET, id, driverToRow(driver));
-  return driver;
+  const ref = doc(db, DRIVERS, id);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return null;
+  await updateDoc(ref, { available });
+  return { ...(snap.data() as Omit<SheetDriver, "id">), id: snap.id, available };
 }
 
-// ---- LocationUpdates (one row per booking, upserted) ----
+// ---- Locations (one doc per booking) ----
 
-function rowToLocation(row: string[]): { bookingId: string; lat: number; lng: number; updatedAt: string } {
-  const get = (col: (typeof LOCATION_COLUMNS)[number]) => row[LOCATION_COLUMNS.indexOf(col)] ?? "";
-  return {
-    bookingId: get("bookingId"),
-    lat: Number(get("lat")),
-    lng: Number(get("lng")),
-    updatedAt: get("updatedAt"),
-  };
-}
-
-async function listLocationsMap(): Promise<Map<string, { lat: number; lng: number; updatedAt: string }>> {
-  const rows = await getRows(LOCATIONS_SHEET);
-  const map = new Map<string, { lat: number; lng: number; updatedAt: string }>();
-  for (const r of rows) {
-    if (!r[0]) continue;
-    const loc = rowToLocation(r);
-    map.set(loc.bookingId, { lat: loc.lat, lng: loc.lng, updatedAt: loc.updatedAt });
+async function listLocationsMap(): Promise<Map<string, Loc>> {
+  const snap = await getDocs(collection(db, LOCATIONS));
+  const map = new Map<string, Loc>();
+  for (const d of snap.docs) {
+    const v = d.data();
+    map.set(d.id, { lat: v.lat, lng: v.lng, updatedAt: v.updatedAt });
   }
   return map;
 }
 
-async function getLocation(bookingId: string): Promise<{ lat: number; lng: number; updatedAt: string } | null> {
-  const row = await getRowById(LOCATIONS_SHEET, bookingId);
-  if (!row) return null;
-  const loc = rowToLocation(row);
-  return { lat: loc.lat, lng: loc.lng, updatedAt: loc.updatedAt };
+async function getLocation(bookingId: string): Promise<Loc | null> {
+  const snap = await getDoc(doc(db, LOCATIONS, bookingId));
+  if (!snap.exists()) return null;
+  const v = snap.data();
+  return { lat: v.lat, lng: v.lng, updatedAt: v.updatedAt };
 }
 
 export async function upsertLocation(
@@ -523,13 +311,12 @@ export async function upsertLocation(
   driverId: string,
   lat: number,
   lng: number,
-): Promise<{ lat: number; lng: number; updatedAt: string }> {
+): Promise<Loc> {
   const updatedAt = new Date().toISOString();
-  // One call: the script updates the row if it exists, else adds it.
-  await upsertRowById(LOCATIONS_SHEET, bookingId, [bookingId, driverId, lat, lng, updatedAt]);
+  await setDoc(doc(db, LOCATIONS, bookingId), { bookingId, driverId, lat, lng, updatedAt });
   return { lat, lng, updatedAt };
 }
 
 async function clearLocation(bookingId: string): Promise<void> {
-  await deleteRowById(LOCATIONS_SHEET, bookingId);
+  await deleteDoc(doc(db, LOCATIONS, bookingId));
 }
