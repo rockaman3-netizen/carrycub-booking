@@ -25,20 +25,20 @@ export type FareRule = {
 };
 
 export const FARE_RULES: Record<string, FareRule> = {
-  "3-wheeler-tempo": { baseFare: 120, includedKm: 2, perKm: 15, minimumFare: 150 },
-  "tata-ace-7ft": { baseFare: 180, includedKm: 2, perKm: 20, minimumFare: 220 },
-  "9-ft-pickup": { baseFare: 220, includedKm: 2, perKm: 24, minimumFare: 260 },
-  "10-ft-pickup": { baseFare: 250, includedKm: 2, perKm: 27, minimumFare: 300 },
-  "14-ft-lpt": { baseFare: 350, includedKm: 2, perKm: 35, minimumFare: 420 },
+  "3-wheeler-tempo": { baseFare: 290, includedKm: 5, perKm: 106, minimumFare: 290 },
+  "tata-ace-7ft": { baseFare: 390, includedKm: 5, perKm: 139, minimumFare: 390 },
+  "9-ft-pickup": { baseFare: 450, includedKm: 5, perKm: 187, minimumFare: 450 },
+  "10-ft-pickup": { baseFare: 480, includedKm: 5, perKm: 168, minimumFare: 480 },
+  "14-ft-lpt": { baseFare: 570, includedKm: 5, perKm: 223, minimumFare: 570 },
 };
 
 // Used only if a vehicle id has no entry above, so adding a new vehicle to
 // vehicles.ts before pricing it here doesn't silently break the estimator.
 export const FALLBACK_FARE_RULE: FareRule = {
-  baseFare: 200,
-  includedKm: 2,
-  perKm: 20,
-  minimumFare: 220,
+  baseFare: 300,
+  includedKm: 5,
+  perKm: 150,
+  minimumFare: 300,
 };
 
 // A straight-line ("as the crow flies") distance between two geocoded
