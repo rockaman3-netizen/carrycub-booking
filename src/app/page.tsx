@@ -7,40 +7,57 @@ import BookingForm from "@/components/BookingForm";
 import Shell from "@/components/Shell";
 import { getStatus } from "@/lib/status";
 import { getBooking, type StoredBooking } from "@/lib/store";
-import { getRecentBookingIds } from "@/lib/recent-bookings";
+import { getActiveBookingId } from "@/lib/recent-bookings";
 
 const CHECKED_KEY = "carrycub:resume-checked";
 
-// If the person has a booking in progress, take them back to it (once each
-// time the app is opened) and keep a "booking in progress" card on top of
-// the form afterwards.
+// While a trip is in progress, opening the app takes the customer straight
+// back to it (instantly — no waiting on the network), once per app launch.
+// Afterwards the home page keeps a "booking in progress" card on top.
 function ResumeBooking() {
   const router = useRouter();
   const [active, setActive] = useState<StoredBooking | null>(null);
+  const [resuming, setResuming] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+
+    let firstOpen = true;
+    try {
+      firstOpen = sessionStorage.getItem(CHECKED_KEY) !== "1";
+      sessionStorage.setItem(CHECKED_KEY, "1");
+    } catch {
+      /* ignore */
+    }
+
+    const activeId = getActiveBookingId();
+    if (!activeId) return;
+
+    if (firstOpen) {
+      setResuming(true);
+      router.replace(`/track/${encodeURIComponent(activeId)}`);
+      return;
+    }
+
     (async () => {
-      const ids = getRecentBookingIds();
-      if (ids.length === 0) return;
-      const b = await getBooking(ids[0]);
+      const b = await getBooking(activeId);
       if (cancelled || !b) return;
       if (b.status === "delivered" || b.status === "cancelled") return;
       setActive(b);
-
-      let firstOpen = true;
-      try {
-        firstOpen = sessionStorage.getItem(CHECKED_KEY) !== "1";
-        sessionStorage.setItem(CHECKED_KEY, "1");
-      } catch {
-        /* ignore */
-      }
-      if (firstOpen) router.replace(`/track/${encodeURIComponent(b.id)}`);
     })();
+
     return () => {
       cancelled = true;
     };
   }, [router]);
+
+  if (resuming) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#f3f4f6]">
+        <p className="text-sm text-gray-500">Opening your booking…</p>
+      </div>
+    );
+  }
 
   if (!active) return null;
   return (
