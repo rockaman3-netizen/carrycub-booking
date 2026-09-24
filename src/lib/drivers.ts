@@ -33,11 +33,23 @@ export async function createDriver(
     headers: { "Content-Type": "application/json", ...adminHeaders() },
     body: JSON.stringify(input),
   });
-  const data = await res.json();
-  if (!res.ok) {
-    return { driver: null, error: data.error, errors: data.errors };
+  // Read the body as text first — a server crash (e.g. a bad deploy, a
+  // timeout, or Apps Script/Cloudflare returning an HTML error page) can
+  // mean the response isn't JSON at all. Parsing straight to JSON in that
+  // case throws, and since nothing here catches it, it used to blank the
+  // whole page. Falling back to the raw text keeps the error visible in
+  // the form instead.
+  const raw = await res.text();
+  let data: { error?: string; errors?: Record<string, string>; driver?: Driver } = {};
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    data = { error: raw ? raw.slice(0, 200) : `Server error (${res.status})` };
   }
-  return { driver: (data.driver as Driver | undefined) ?? null };
+  if (!res.ok) {
+    return { driver: null, error: data.error ?? `Server error (${res.status})`, errors: data.errors };
+  }
+  return { driver: data.driver ?? null };
 }
 
 export async function setDriverAvailability(id: string, available: boolean): Promise<Driver | null> {
