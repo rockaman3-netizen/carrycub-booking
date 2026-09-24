@@ -1,29 +1,18 @@
 // SERVER ONLY. Never import this file from a "use client" component.
-// Data source: Firebase Firestore. Collections: bookings, drivers, locations.
+// Data source: Firebase Firestore via REST API + service account
+// (works on Cloudflare Workers and on the free Spark plan).
+// Collections: bookings, drivers, locations.
 // (File name sheets.ts is kept so other imports don't change.)
 
-import { initializeApp, getApps, getApp } from "firebase/app";
-import {
-  getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc,
-  deleteDoc, query, where, runTransaction,
-} from "firebase/firestore";
+import { SignJWT, importPKCS8 } from "jose";
 import type { StatusId } from "@/lib/status";
-
-const app = getApps().length
-  ? getApp()
-  : initializeApp({
-      apiKey: "AIzaSyDG2BB4ZBKJIcsJWqqt_QFB8cZ5dp8RZbU",
-      authDomain: "carrycub-truck-booking.firebaseapp.com",
-      projectId: "carrycub-truck-booking",
-      storageBucket: "carrycub-truck-booking.firebasestorage.app",
-      messagingSenderId: "1074926867268",
-      appId: "1:1074926867268:web:78324dd7403039dc037d11",
-    });
-const db = getFirestore(app);
 
 const BOOKINGS = "bookings";
 const DRIVERS = "drivers";
 const LOCATIONS = "locations";
+
+const MAX_BOOKINGS = 200; // listBookings returns the newest N (keeps Firestore reads low)
+const MAX_RETRIES = 5; // retries when two people edit the same booking at once
 
 export type SheetBooking = {
   id: string;
@@ -62,47 +51,244 @@ export type SheetDriver = {
 type Loc = { lat: number; lng: number; updatedAt: string };
 type Result = { booking: SheetBooking | null; error?: string };
 
+// ---- Firestore REST plumbing ----
+
+function env(name: string): string {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing env var: ${name}`);
+  return v;
+}
+
+const projectId = () => process.env.FIREBASE_PROJECT_ID || "carrycub-truck-booking";
+const docsUrl = () =>
+  `https://firestore.googleapis.com/v1/projects/${projectId()}/databases/(default)/documents`;
+const docName = (col: string, id: string) =>
+  `projects/${projectId()}/databases/(default)/documents/${col}/${id}`;
+
+let cachedToken: { value: string; exp: number } | null = null;
+
+async function getToken(): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  if (cachedToken && cachedToken.exp - 60 > now) return cachedToken.value;
+
+  const email = env("FIREBASE_CLIENT_EMAIL");
+  const pem = env("FIREBASE_PRIVATE_KEY").replace(/^"|"$/g, "").replace(/\\n/g, "\n");
+  const key = await importPKCS8(pem, "RS256");
+
+  const assertion = await new SignJWT({ scope: "https://www.googleapis.com/auth/datastore" })
+    .setProtectedHeader({ alg: "RS256", typ: "JWT" })
+    .setIssuer(email)
+    .setSubject(email)
+    .setAudience("https://oauth2.googleapis.com/token")
+    .setIssuedAt(now)
+    .setExpirationTime(now + 3600)
+    .sign(key);
+
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion,
+    }),
+  });
+  if (!res.ok) throw new Error(`Firebase auth failed (${res.status})`);
+  const data = (await res.json()) as { access_token: string; expires_in: number };
+  cachedToken = { value: data.access_token, exp: now + data.expires_in };
+  return data.access_token;
+}
+
+type Reply = { status: number; ok: boolean; body: any };
+
+async function call(method: string, url: string, body?: unknown): Promise<Reply> {
+  const res = await fetch(url, {
+    method,
+    cache: "no-store",
+    headers: {
+      Authorization: `Bearer ${await getToken()}`,
+      "Content-Type": "application/json",
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await res.text();
+  let parsed: any = null;
+  try {
+    parsed = text ? JSON.parse(text) : null;
+  } catch {
+    parsed = text;
+  }
+  return { status: res.status, ok: res.ok, body: parsed };
+}
+
+function fail(what: string, r: Reply): never {
+  throw new Error(`Firestore ${what} failed (${r.status}): ${JSON.stringify(r.body)}`);
+}
+
+// ---- Value encoding (JS <-> Firestore REST format) ----
+
+type FsValue = Record<string, any>;
+type RawDoc = { name: string; fields?: Record<string, FsValue>; updateTime?: string };
+
+function encodeValue(v: unknown): FsValue {
+  if (v === null || v === undefined) return { nullValue: null };
+  if (typeof v === "string") return { stringValue: v };
+  if (typeof v === "boolean") return { booleanValue: v };
+  if (typeof v === "number") {
+    return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+  }
+  if (Array.isArray(v)) return { arrayValue: { values: v.map(encodeValue) } };
+  if (typeof v === "object") {
+    return { mapValue: { fields: encodeFields(v as Record<string, unknown>) } };
+  }
+  return { nullValue: null };
+}
+
+function encodeFields(obj: Record<string, unknown>): Record<string, FsValue> {
+  const out: Record<string, FsValue> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== undefined) out[k] = encodeValue(v);
+  }
+  return out;
+}
+
+function decodeValue(v: FsValue): unknown {
+  if ("nullValue" in v) return null;
+  if ("stringValue" in v) return v.stringValue;
+  if ("booleanValue" in v) return v.booleanValue;
+  if ("integerValue" in v) return Number(v.integerValue);
+  if ("doubleValue" in v) return v.doubleValue;
+  if ("timestampValue" in v) return v.timestampValue;
+  if ("arrayValue" in v) return (v.arrayValue.values ?? []).map(decodeValue);
+  if ("mapValue" in v) return decodeFields(v.mapValue.fields ?? {});
+  return null;
+}
+
+function decodeFields(fields: Record<string, FsValue>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(fields)) out[k] = decodeValue(v);
+  return out;
+}
+
+const decodeDoc = (d: RawDoc) => decodeFields(d.fields ?? {});
+const idOf = (d: RawDoc) => d.name.split("/").pop() as string;
+
+// ---- Firestore operations ----
+
+async function getRaw(col: string, id: string): Promise<RawDoc | null> {
+  const r = await call("GET", `${docsUrl()}/${col}/${encodeURIComponent(id)}`);
+  if (r.status === 404) return null;
+  if (!r.ok) fail(`read ${col}/${id}`, r);
+  return r.body as RawDoc;
+}
+
+async function listAll(col: string): Promise<RawDoc[]> {
+  const out: RawDoc[] = [];
+  let pageToken = "";
+  do {
+    const suffix = pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : "";
+    const r = await call("GET", `${docsUrl()}/${col}?pageSize=300${suffix}`);
+    if (!r.ok) fail(`list ${col}`, r);
+    out.push(...((r.body?.documents ?? []) as RawDoc[]));
+    pageToken = r.body?.nextPageToken ?? "";
+  } while (pageToken);
+  return out;
+}
+
+async function runQuery(structuredQuery: Record<string, unknown>): Promise<RawDoc[]> {
+  const r = await call("POST", `${docsUrl()}:runQuery`, { structuredQuery });
+  if (!r.ok) fail("query", r);
+  return (r.body as { document?: RawDoc }[])
+    .filter((x) => x.document)
+    .map((x) => x.document as RawDoc);
+}
+
+// Returns false if a doc with this id already exists.
+async function createRaw(col: string, id: string, data: Record<string, unknown>): Promise<boolean> {
+  const r = await call("POST", `${docsUrl()}/${col}?documentId=${encodeURIComponent(id)}`, {
+    fields: encodeFields(data),
+  });
+  if (r.status === 409) return false;
+  if (!r.ok) fail(`create ${col}/${id}`, r);
+  return true;
+}
+
+// Overwrite a doc, but only if nobody changed it since we read it (updateTime check).
+// Returns false when someone else changed it first, so the caller can retry.
+async function commitUpdate(
+  col: string,
+  id: string,
+  data: Record<string, unknown>,
+  updateTime: string | undefined,
+): Promise<boolean> {
+  const r = await call("POST", `${docsUrl()}:commit`, {
+    writes: [
+      {
+        update: { name: docName(col, id), fields: encodeFields(data) },
+        currentDocument: { updateTime },
+      },
+    ],
+  });
+  if (r.ok) return true;
+  const conflict =
+    r.status === 409 || (r.status === 400 && r.body?.error?.status === "FAILED_PRECONDITION");
+  if (conflict) return false;
+  fail(`update ${col}/${id}`, r);
+}
+
 // ---- helpers ----
 
 function toBooking(id: string, data: Record<string, unknown>): SheetBooking {
   return { ...(data as Omit<SheetBooking, "id">), id };
 }
 
-function toDoc(b: SheetBooking) {
+function toDoc(b: SheetBooking): Record<string, unknown> {
   const copy = { ...b };
   delete copy.driverLocation; // location lives in its own collection
   return copy;
 }
 
-function newestFirst(a: SheetBooking, b: SheetBooking): number {
-  return a.createdAt < b.createdAt ? 1 : -1;
+function toDriver(d: RawDoc): SheetDriver {
+  return { ...(decodeDoc(d) as Omit<SheetDriver, "id">), id: idOf(d) };
 }
 
 // ---- Bookings ----
 
 export async function listBookings(): Promise<SheetBooking[]> {
-  const [snap, locations] = await Promise.all([
-    getDocs(collection(db, BOOKINGS)),
+  const [docs, locations] = await Promise.all([
+    runQuery({
+      from: [{ collectionId: BOOKINGS }],
+      orderBy: [{ field: { fieldPath: "createdAt" }, direction: "DESCENDING" }],
+      limit: MAX_BOOKINGS,
+    }),
     listLocationsMap(),
   ]);
-  return snap.docs
-    .map((d) => {
-      const b = toBooking(d.id, d.data());
-      b.driverLocation = locations.get(b.id) ?? null;
-      return b;
-    })
-    .sort(newestFirst);
+  return docs.map((d) => {
+    const b = toBooking(idOf(d), decodeDoc(d));
+    b.driverLocation = locations.get(b.id) ?? null;
+    return b;
+  });
 }
 
 export async function listBookingsForDriver(driverId: string): Promise<SheetBooking[]> {
-  const snap = await getDocs(query(collection(db, BOOKINGS), where("driverId", "==", driverId)));
-  return snap.docs.map((d) => toBooking(d.id, d.data())).sort(newestFirst);
+  const docs = await runQuery({
+    from: [{ collectionId: BOOKINGS }],
+    where: {
+      fieldFilter: {
+        field: { fieldPath: "driverId" },
+        op: "EQUAL",
+        value: { stringValue: driverId },
+      },
+    },
+  });
+  return docs
+    .map((d) => toBooking(idOf(d), decodeDoc(d)))
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
 }
 
 export async function getBooking(id: string): Promise<SheetBooking | null> {
-  const [snap, location] = await Promise.all([getDoc(doc(db, BOOKINGS, id)), getLocation(id)]);
-  if (!snap.exists()) return null;
-  const b = toBooking(snap.id, snap.data());
+  const [raw, location] = await Promise.all([getRaw(BOOKINGS, id), getLocation(id)]);
+  if (!raw) return null;
+  const b = toBooking(id, decodeDoc(raw));
   b.driverLocation = location;
   return b;
 }
@@ -133,34 +319,32 @@ export async function createBooking(input: {
     driverVehicleNo: null,
     driverVehicleType: null,
   };
-  const ref = doc(db, BOOKINGS, input.id);
-  await runTransaction(db, async (tx) => {
-    const snap = await tx.get(ref);
-    if (snap.exists()) throw new Error("DUPLICATE_BOOKING_ID");
-    tx.set(ref, toDoc(booking));
-  });
+  const created = await createRaw(BOOKINGS, input.id, toDoc(booking));
+  if (!created) throw new Error("DUPLICATE_BOOKING_ID");
   return booking;
 }
 
-// Read the live doc, apply the change, write back, all in one transaction
-// (so two people can't overwrite each other's change).
+// Read the live doc, apply the change, write back only if nobody else changed it
+// in between. If they did, read again and retry (so two people can't overwrite
+// each other's change).
 async function mutateBooking(
   id: string,
   mutate: (current: SheetBooking) => Partial<SheetBooking> | { error: string },
 ): Promise<Result> {
-  const ref = doc(db, BOOKINGS, id);
-  const outcome = await runTransaction<Result>(db, async (tx) => {
-    const snap = await tx.get(ref);
-    if (!snap.exists()) return { booking: null, error: "Booking not found" };
-    const current = toBooking(snap.id, snap.data());
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const raw = await getRaw(BOOKINGS, id);
+    if (!raw) return { booking: null, error: "Booking not found" };
+    const current = toBooking(id, decodeDoc(raw));
     const patch = mutate(current);
     if ("error" in patch) return { booking: current, error: patch.error };
     const updated: SheetBooking = { ...current, ...patch, updatedAt: new Date().toISOString() };
-    tx.set(ref, toDoc(updated));
-    return { booking: updated };
-  });
-  if (outcome.booking && !outcome.error) outcome.booking.driverLocation = await getLocation(id);
-  return outcome;
+    const saved = await commitUpdate(BOOKINGS, id, toDoc(updated), raw.updateTime);
+    if (saved) {
+      updated.driverLocation = await getLocation(id);
+      return { booking: updated };
+    }
+  }
+  return { booking: null, error: "Booking is busy, please try again" };
 }
 
 export async function assignDriver(bookingId: string, driver: SheetDriver): Promise<Result> {
@@ -253,23 +437,19 @@ export async function driverAdvance(
 // ---- Drivers ----
 
 export async function listDrivers(): Promise<SheetDriver[]> {
-  const snap = await getDocs(collection(db, DRIVERS));
-  return snap.docs.map((d) => ({ ...(d.data() as Omit<SheetDriver, "id">), id: d.id }));
+  const docs = await listAll(DRIVERS);
+  return docs.map(toDriver);
 }
 
 export async function createDriver(driver: SheetDriver): Promise<SheetDriver> {
-  const ref = doc(db, DRIVERS, driver.id);
-  await runTransaction(db, async (tx) => {
-    const snap = await tx.get(ref);
-    if (snap.exists()) throw new Error("DUPLICATE_DRIVER_ID");
-    tx.set(ref, driver);
-  });
+  const created = await createRaw(DRIVERS, driver.id, { ...driver });
+  if (!created) throw new Error("DUPLICATE_DRIVER_ID");
   return driver;
 }
 
 export async function getDriver(id: string): Promise<SheetDriver | null> {
-  const snap = await getDoc(doc(db, DRIVERS, id));
-  return snap.exists() ? { ...(snap.data() as Omit<SheetDriver, "id">), id: snap.id } : null;
+  const raw = await getRaw(DRIVERS, id);
+  return raw ? toDriver(raw) : null;
 }
 
 export async function getDriverByPhone(phone: string): Promise<SheetDriver | null> {
@@ -280,30 +460,34 @@ export async function getDriverByPhone(phone: string): Promise<SheetDriver | nul
 }
 
 export async function setDriverAvailability(id: string, available: boolean): Promise<SheetDriver | null> {
-  const ref = doc(db, DRIVERS, id);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) return null;
-  await updateDoc(ref, { available });
-  return { ...(snap.data() as Omit<SheetDriver, "id">), id: snap.id, available };
+  const raw = await getRaw(DRIVERS, id);
+  if (!raw) return null;
+  const r = await call(
+    "PATCH",
+    `${docsUrl()}/${DRIVERS}/${encodeURIComponent(id)}?updateMask.fieldPaths=available`,
+    { fields: { available: { booleanValue: available } } },
+  );
+  if (!r.ok) fail(`update ${DRIVERS}/${id}`, r);
+  return { ...toDriver(raw), available };
 }
 
 // ---- Locations (one doc per booking) ----
 
+function toLoc(d: RawDoc): Loc {
+  const v = decodeDoc(d);
+  return { lat: v.lat as number, lng: v.lng as number, updatedAt: v.updatedAt as string };
+}
+
 async function listLocationsMap(): Promise<Map<string, Loc>> {
-  const snap = await getDocs(collection(db, LOCATIONS));
+  const docs = await listAll(LOCATIONS);
   const map = new Map<string, Loc>();
-  for (const d of snap.docs) {
-    const v = d.data();
-    map.set(d.id, { lat: v.lat, lng: v.lng, updatedAt: v.updatedAt });
-  }
+  for (const d of docs) map.set(idOf(d), toLoc(d));
   return map;
 }
 
 async function getLocation(bookingId: string): Promise<Loc | null> {
-  const snap = await getDoc(doc(db, LOCATIONS, bookingId));
-  if (!snap.exists()) return null;
-  const v = snap.data();
-  return { lat: v.lat, lng: v.lng, updatedAt: v.updatedAt };
+  const raw = await getRaw(LOCATIONS, bookingId);
+  return raw ? toLoc(raw) : null;
 }
 
 export async function upsertLocation(
@@ -313,10 +497,14 @@ export async function upsertLocation(
   lng: number,
 ): Promise<Loc> {
   const updatedAt = new Date().toISOString();
-  await setDoc(doc(db, LOCATIONS, bookingId), { bookingId, driverId, lat, lng, updatedAt });
+  const r = await call("PATCH", `${docsUrl()}/${LOCATIONS}/${encodeURIComponent(bookingId)}`, {
+    fields: encodeFields({ bookingId, driverId, lat, lng, updatedAt }),
+  });
+  if (!r.ok) fail(`write ${LOCATIONS}/${bookingId}`, r);
   return { lat, lng, updatedAt };
 }
 
 async function clearLocation(bookingId: string): Promise<void> {
-  await deleteDoc(doc(db, LOCATIONS, bookingId));
+  const r = await call("DELETE", `${docsUrl()}/${LOCATIONS}/${encodeURIComponent(bookingId)}`);
+  if (!r.ok && r.status !== 404) fail(`delete ${LOCATIONS}/${bookingId}`, r);
 }
