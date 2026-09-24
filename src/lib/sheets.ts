@@ -68,8 +68,8 @@ const docName = (col: string, id: string) =>
 let cachedToken: { value: string; exp: number } | null = null;
 
 // Accepts the key pasted in almost any form: whole service-account JSON,
-// the key with or without the BEGIN/END lines, with quotes, with a trailing
-// comma, or with literal "\n" text.
+// the key with or without the BEGIN/END lines (even if the dashes got
+// mangled), with quotes, with a trailing comma, or with literal "\n" text.
 function cleanPrivateKey(): string {
   let raw = env("FIREBASE_PRIVATE_KEY").trim();
   if (raw.startsWith("{")) {
@@ -79,14 +79,16 @@ function cleanPrivateKey(): string {
   }
   raw = raw.replace(/\\n/g, "\n");
 
-  const begin = "-----BEGIN PRIVATE KEY-----";
-  const end = "-----END PRIVATE KEY-----";
-  const bi = raw.indexOf(begin);
-  if (bi >= 0) raw = raw.slice(bi + begin.length);
-  const ei = raw.indexOf(end);
-  if (ei >= 0) raw = raw.slice(0, ei);
+  // Drop the BEGIN/END lines however the dashes/spaces were pasted.
+  const begin = raw.match(/BEGIN\s+PRIVATE\s+KEY/);
+  if (begin && begin.index !== undefined) raw = raw.slice(begin.index + begin[0].length);
+  const end = raw.search(/END\s+PRIVATE\s+KEY/);
+  if (end >= 0) raw = raw.slice(0, end);
 
-  const body = raw.replace(/[^A-Za-z0-9+/=]/g, "");
+  let body = raw.replace(/[^A-Za-z0-9+/=]/g, "");
+  const start = body.indexOf("MII");
+  if (start > 0 && start < 12) body = body.slice(start);
+
   if (body.length < 1000) {
     throw new Error(`FIREBASE_PRIVATE_KEY incomplete (only ${body.length} chars found)`);
   }
