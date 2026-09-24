@@ -67,8 +67,9 @@ const docName = (col: string, id: string) =>
 
 let cachedToken: { value: string; exp: number } | null = null;
 
-// Accepts the key pasted as: the bare key, the key with quotes/trailing comma,
-// literal "\n" text, or the whole service-account JSON file.
+// Accepts the key pasted in almost any form: whole service-account JSON,
+// the key with or without the BEGIN/END lines, with quotes, with a trailing
+// comma, or with literal "\n" text.
 function cleanPrivateKey(): string {
   let raw = env("FIREBASE_PRIVATE_KEY").trim();
   if (raw.startsWith("{")) {
@@ -76,13 +77,21 @@ function cleanPrivateKey(): string {
       raw = JSON.parse(raw).private_key || raw;
     } catch {}
   }
-  const found = raw
-    .replace(/\\n/g, "\n")
-    .match(/-----BEGIN PRIVATE KEY-----([\s\S]*?)-----END PRIVATE KEY-----/);
-  if (!found) throw new Error("FIREBASE_PRIVATE_KEY: BEGIN/END line missing");
-  const body = found[1].replace(/[^A-Za-z0-9+/=]/g, "");
+  raw = raw.replace(/\\n/g, "\n");
+
+  const begin = "-----BEGIN PRIVATE KEY-----";
+  const end = "-----END PRIVATE KEY-----";
+  const bi = raw.indexOf(begin);
+  if (bi >= 0) raw = raw.slice(bi + begin.length);
+  const ei = raw.indexOf(end);
+  if (ei >= 0) raw = raw.slice(0, ei);
+
+  const body = raw.replace(/[^A-Za-z0-9+/=]/g, "");
   if (body.length < 1000) {
-    throw new Error(`FIREBASE_PRIVATE_KEY incomplete (${body.length} chars)`);
+    throw new Error(`FIREBASE_PRIVATE_KEY incomplete (only ${body.length} chars found)`);
+  }
+  if (!body.startsWith("MII")) {
+    throw new Error(`FIREBASE_PRIVATE_KEY does not look like a key (starts with "${body.slice(0, 4)}")`);
   }
   const lines = (body.match(/.{1,64}/g) as string[]).join("\n");
   return `-----BEGIN PRIVATE KEY-----\n${lines}\n-----END PRIVATE KEY-----\n`;
