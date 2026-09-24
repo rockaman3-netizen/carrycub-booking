@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { vehicleById } from "@/lib/vehicles";
 import { fmtTime } from "@/lib/format";
 import { FLOW, getStatus, nextStatus } from "@/lib/status";
 import {
   acceptBooking,
   driverAdvanceStatus,
-  getBooking,
+  fetchBooking,
   rejectBooking,
   updateDriverLocation,
   type StoredBooking,
@@ -27,6 +27,8 @@ const GPS_MESSAGE: Record<GeoShareStatus, string | null> = {
   unavailable: "Couldn't get a GPS fix. Sharing will resume automatically once signal is available.",
   unsupported: "This browser doesn't support location sharing.",
 };
+
+type ActionResult = { booking: StoredBooking | null; error?: string };
 
 // Universal maps link: opens the native Maps app on iOS/Android when
 // launched from a PWA/mobile browser, falls back to Google Maps on web.
@@ -62,13 +64,34 @@ export default function DriverBookingDetail({ id }: { id: string }) {
   const [booking, setBooking] = useState<StoredBooking | null | undefined>(undefined);
   const [error, setError] = useState("");
   const [confirmReject, setConfirmReject] = useState(false);
+  // True while a button action (accept / reject / status) is in flight.
+  const [busy, setBusy] = useState(false);
+  // True when the last poll failed for a network/server reason (not "not found").
+  const [connError, setConnError] = useState(false);
+  // Bumped whenever a button action starts or ends, so an older poll response
+  // that arrives late can't overwrite the newer status.
+  const actionSeq = useRef(0);
   // Manual location-sharing toggle — the driver decides when to start/stop,
   // rather than it being silently tied to trip status.
   const [sharingOn, setSharingOn] = useState(false);
   const driverId = currentDriverId();
 
   // Polls so this stays in sync if admin reassigns/cancels elsewhere.
-  usePolling(async () => setBooking(await getBooking(id)), [id]);
+  usePolling(async () => {
+    const seq = actionSeq.current;
+    const result = await fetchBooking(id);
+    if (seq !== actionSeq.current) return; // an action ran meanwhile; this snapshot may be stale
+    if (result.kind === "ok") {
+      setBooking(result.booking);
+      setConnError(false);
+    } else if (result.kind === "notFound") {
+      setBooking(null);
+      setConnError(false);
+    } else {
+      // Network/server hiccup: keep whatever we already show, just flag it.
+      setConnError(true);
+    }
+  }, [id]);
 
   // Hooks must run unconditionally (Rules of Hooks), so GPS sharing is wired up
   // here — before the loading/not-found guards below. Only actually runs once
@@ -80,8 +103,12 @@ export default function DriverBookingDetail({ id }: { id: string }) {
   const onLocation = useCallback(
     async (lat: number, lng: number) => {
       if (!driverId) return;
-      const res = await updateDriverLocation(id, driverId, lat, lng);
-      if (res.booking) setBooking(res.booking);
+      try {
+        const res = await updateDriverLocation(id, driverId, lat, lng);
+        if (res.booking) setBooking(res.booking);
+      } catch {
+        // Ignore a single failed location send; the next fix will retry.
+      }
     },
     [id, driverId],
   );
@@ -89,7 +116,11 @@ export default function DriverBookingDetail({ id }: { id: string }) {
   const gpsMessage = shareActive ? GPS_MESSAGE[gpsStatus] : null;
 
   if (booking === undefined) {
-    return <p className="px-5 py-12 text-center text-sm text-gray-400">Loading...</p>;
+    return (
+      <p className="px-5 py-12 text-center text-sm text-gray-400">
+        {connError ? "Connection problem. Retrying…" : "Loading..."}
+      </p>
+    );
   }
   if (booking === null) {
     return (
@@ -112,15 +143,22 @@ export default function DriverBookingDetail({ id }: { id: string }) {
   const canAdvance = mine && !isAssigned && !isFinished && next;
   const canShareLocation = mine && !isAssigned && !isFinished;
 
-  async function refresh(resPromise: Promise<{ booking: StoredBooking | null; error?: string }>) {
-    const res = await resPromise;
-    if (res.error) {
-      setError(res.error);
-      return;
-    }
-    if (res.booking) {
-      setBooking(res.booking);
-      setError("");
+  // Runs one button action at a time, shows errors, and keeps the screen in
+  // sync with whatever the server says the booking looks like now.
+  async function run(action: () => Promise<ActionResult>) {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    actionSeq.current += 1;
+    try {
+      const res = await action();
+      if (res.booking) setBooking(res.booking);
+      if (res.error) setError(res.error);
+    } catch {
+      setError("Network problem. Please check your connection and try again.");
+    } finally {
+      actionSeq.current += 1;
+      setBusy(false);
     }
   }
 
@@ -129,6 +167,12 @@ export default function DriverBookingDetail({ id }: { id: string }) {
       <Link href="/driver" className="text-xs font-medium text-gray-500">
         ← Assigned bookings
       </Link>
+
+      {connError && (
+        <p className="mt-3 rounded-xl bg-orange-50 px-3 py-2 text-center text-xs text-orange-700">
+          Connection problem. Retrying…
+        </p>
+      )}
 
       {/* Current status — the one thing a driver needs at a glance */}
       <div className="mt-3 rounded-2xl bg-orange-50 px-4 py-4 text-center">
@@ -315,17 +359,19 @@ export default function DriverBookingDetail({ id }: { id: string }) {
                 <div className="flex gap-3">
                   <button
                     type="button"
+                    disabled={busy}
                     onClick={() => setConfirmReject(true)}
-                    className="shrink-0 rounded-2xl border border-red-200 px-5 py-3.5 text-sm font-semibold text-red-600 active:bg-red-50"
+                    className="shrink-0 rounded-2xl border border-red-200 px-5 py-3.5 text-sm font-semibold text-red-600 active:bg-red-50 disabled:opacity-50"
                   >
                     Reject
                   </button>
                   <button
                     type="button"
-                    onClick={() => driverId && refresh(acceptBooking(booking.id, driverId))}
-                    className="flex-1 rounded-2xl bg-brand py-3.5 text-base font-semibold text-white active:bg-brand-dark"
+                    disabled={busy}
+                    onClick={() => driverId && run(() => acceptBooking(booking.id, driverId))}
+                    className="flex-1 rounded-2xl bg-brand py-3.5 text-base font-semibold text-white active:bg-brand-dark disabled:opacity-60"
                   >
-                    Accept booking
+                    {busy ? "Please wait…" : "Accept booking"}
                   </button>
                 </div>
               ) : (
@@ -334,18 +380,20 @@ export default function DriverBookingDetail({ id }: { id: string }) {
                   <div className="mt-3 flex gap-3">
                     <button
                       type="button"
+                      disabled={busy}
                       onClick={() => setConfirmReject(false)}
-                      className="flex-1 rounded-xl bg-white py-2.5 text-sm font-medium text-gray-700"
+                      className="flex-1 rounded-xl bg-white py-2.5 text-sm font-medium text-gray-700 disabled:opacity-50"
                     >
                       Keep booking
                     </button>
                     <button
                       type="button"
+                      disabled={busy}
                       onClick={() => {
-                        if (driverId) refresh(rejectBooking(booking.id, driverId));
+                        if (driverId) run(() => rejectBooking(booking.id, driverId));
                         setConfirmReject(false);
                       }}
-                      className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-medium text-white"
+                      className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-medium text-white disabled:opacity-60"
                     >
                       Yes, reject
                     </button>
@@ -357,10 +405,11 @@ export default function DriverBookingDetail({ id }: { id: string }) {
               nextInfo && (
                 <button
                   type="button"
-                  onClick={() => driverId && next && refresh(driverAdvanceStatus(booking.id, driverId, next))}
-                  className="w-full rounded-2xl bg-brand py-3.5 text-base font-semibold text-white active:bg-brand-dark"
+                  disabled={busy}
+                  onClick={() => driverId && next && run(() => driverAdvanceStatus(booking.id, driverId, next))}
+                  className="w-full rounded-2xl bg-brand py-3.5 text-base font-semibold text-white active:bg-brand-dark disabled:opacity-60"
                 >
-                  Mark: {nextInfo.emoji} {nextInfo.label}
+                  {busy ? "Please wait…" : `Mark: ${nextInfo.emoji} ${nextInfo.label}`}
                 </button>
               )
             )}
