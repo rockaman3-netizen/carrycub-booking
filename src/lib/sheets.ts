@@ -423,13 +423,19 @@ export async function driverAdvance(
 
 function rowToDriver(row: string[]): SheetDriver {
   const get = (col: (typeof DRIVER_COLUMNS)[number]) => row[DRIVER_COLUMNS.indexOf(col)] ?? "";
+  // The sheet's "available" column can come back as an actual boolean
+  // (Google Sheets stores TRUE/FALSE checkboxes as real booleans, not
+  // text) instead of the string "TRUE"/"FALSE" — handle both.
+  const rawAvailable: unknown = get("available");
+  const available =
+    typeof rawAvailable === "boolean" ? rawAvailable : String(rawAvailable).trim().toUpperCase() === "TRUE";
   return {
     id: get("id"),
     name: get("name"),
     phone: get("phone"),
     vehicleNo: get("vehicleNo"),
     vehicleType: get("vehicleType"),
-    available: get("available").trim().toUpperCase() === "TRUE",
+    available,
   };
 }
 
