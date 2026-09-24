@@ -66,7 +66,6 @@ export default function TrackingMap({ pickup, drop, driver, className, emptyText
       const map = L.map(containerRef.current, {
         zoomControl: true,
         scrollWheelZoom: false, // don't hijack page scroll on trackpads
-        tap: true, // keep touch taps snappy on mobile
       }).setView(FALLBACK_CENTER, 13);
 
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
