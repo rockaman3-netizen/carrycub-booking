@@ -1,20 +1,64 @@
-import type { LatLng } from "@/lib/geocode";
+import { adminHeaders } from "@/lib/admin-auth";
 
-/**
- * Great-circle ("straight-line") distance in km between two points.
- *
- * TEST-ONLY stand-in for a real routing service. No routing API is wired
- * into this build, so this is the clearly-marked test distance calculation
- * — see TEST_ROAD_DISTANCE_FACTOR in fareConfig.ts for the fudge factor
- * applied on top of it to roughly approximate road distance.
- */
-export function haversineKm(a: LatLng, b: LatLng): number {
-  const R = 6371; // Earth radius, km
-  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
-  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
-  const lat1 = (a.lat * Math.PI) / 180;
-  const lat2 = (b.lat * Math.PI) / 180;
-  const h =
-    Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+// Drivers live in the Drivers sheet now (see src/lib/sheets.ts). Listing and
+// toggling availability are admin-only actions — see src/app/api/drivers/**.
+export type Driver = {
+  id: string;
+  name: string;
+  phone: string;
+  vehicleNo: string;
+  vehicleType: string; // vehicle id from vehicles.ts
+  available: boolean; // manual on-duty switch
+};
+
+export async function listDrivers(): Promise<Driver[]> {
+  const res = await fetch("/api/drivers", { headers: adminHeaders() });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return (data.drivers as Driver[] | undefined) ?? [];
+}
+
+export type NewDriverInput = {
+  name: string;
+  phone: string;
+  vehicleType: string;
+  vehicleNo: string;
+};
+
+export async function createDriver(
+  input: NewDriverInput,
+): Promise<{ driver: Driver | null; error?: string; errors?: Record<string, string> }> {
+  const res = await fetch("/api/drivers", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...adminHeaders() },
+    body: JSON.stringify(input),
+  });
+  // Read the body as text first — a server crash (e.g. a bad deploy, a
+  // timeout, or Apps Script/Cloudflare returning an HTML error page) can
+  // mean the response isn't JSON at all. Parsing straight to JSON in that
+  // case throws, and since nothing here catches it, it used to blank the
+  // whole page. Falling back to the raw text keeps the error visible in
+  // the form instead.
+  const raw = await res.text();
+  let data: { error?: string; errors?: Record<string, string>; driver?: Driver } = {};
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    data = { error: raw ? raw.slice(0, 200) : `Server error (${res.status})` };
+  }
+  if (!res.ok) {
+    return { driver: null, error: data.error ?? `Server error (${res.status})`, errors: data.errors };
+  }
+  return { driver: data.driver ?? null };
+}
+
+export async function setDriverAvailability(id: string, available: boolean): Promise<Driver | null> {
+  const res = await fetch(`/api/drivers/${encodeURIComponent(id)}/availability`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...adminHeaders() },
+    body: JSON.stringify({ available }),
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  return (data.driver as Driver | undefined) ?? null;
 }
