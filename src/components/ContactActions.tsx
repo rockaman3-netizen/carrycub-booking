@@ -6,8 +6,8 @@
 // the "only show contact details to the relevant customer, assigned driver,
 // or admin" rule is enforced (see TrackingView / driver BookingDetail).
 
-export function toIndianE164(phone: string): string | null {
-  const digits = phone.replace(/\D/g, "");
+export function toIndianE164(phone: string | number | null | undefined): string | null {
+  const digits = String(phone ?? "").replace(/\D/g, "");
   if (digits.length < 10) return null;
   const last10 = digits.slice(-10);
   return `+91${last10}`;
@@ -18,7 +18,7 @@ export function CallButton({
   label = "Call",
   className,
 }: {
-  phone: string;
+  phone: string | number | null | undefined;
   label?: string;
   className?: string;
 }) {
@@ -44,7 +44,7 @@ export function WhatsAppButton({
   message,
   className,
 }: {
-  phone: string;
+  phone: string | number | null | undefined;
   label?: string;
   message?: string;
   className?: string;
