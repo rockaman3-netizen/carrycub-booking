@@ -92,10 +92,6 @@ export default function Home() {
         <Link href="/track" className="text-xs text-gray-400">
           Track booking
         </Link>
-        <span className="text-gray-300">·</span>
-        <Link href="/driver/login" className="text-xs text-gray-400">
-          Driver panel
-        </Link>
       </div>
     </Shell>
   );
