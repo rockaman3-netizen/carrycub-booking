@@ -3,9 +3,10 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { VEHICLES } from "@/lib/vehicles";
-import { getStatus, type StatusId } from "@/lib/status";
-import { getBooking, type StoredBooking } from "@/lib/store";
+import { canCancel, getStatus, type StatusId } from "@/lib/status";
+import { getBooking, cancelBooking, type StoredBooking } from "@/lib/store";
 import { rememberRecentBookingId } from "@/lib/recent-bookings";
 import { usePolling } from "@/lib/poll";
 
@@ -62,9 +63,31 @@ function CopyBookingId({ id }: { id: string }) {
   );
 }
 
+// Shown briefly right after "Book Now", while the booking record is being
+// created/fetched — replaces a blank white screen with something branded.
+function LoadingScreen() {
+  return (
+    <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col items-center justify-center gap-5 bg-[#f3f4f6] px-6 text-center">
+      <div className="relative flex h-20 w-20 items-center justify-center">
+        <span className="absolute inset-0 animate-ping rounded-full bg-brand/20" />
+        <span className="relative flex h-16 w-16 items-center justify-center rounded-full bg-white text-3xl shadow-sm">
+          🚚
+        </span>
+      </div>
+      <div>
+        <p className="text-sm font-semibold text-navy">Setting up your booking…</p>
+        <p className="mt-1 text-xs text-gray-500">This will just take a moment</p>
+      </div>
+    </main>
+  );
+}
+
 export default function BookingConfirmation({ id }: { id: string }) {
+  const router = useRouter();
   // undefined = still loading, null = not found
   const [booking, setBooking] = useState<StoredBooking | null | undefined>(undefined);
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   useEffect(() => {
     rememberRecentBookingId(id);
@@ -80,12 +103,25 @@ export default function BookingConfirmation({ id }: { id: string }) {
     [id],
   );
 
+  // As soon as a driver is assigned (status leaves "searching"), jump the
+  // customer straight to the live tracking screen instead of making them
+  // tap "Track Booking" themselves. Cancellations/still-searching stay put.
+  useEffect(() => {
+    if (booking && booking.status !== "searching") {
+      router.replace(`/track/${booking.id}`);
+    }
+  }, [booking, router]);
+
+  async function handleCancel() {
+    setCancelling(true);
+    const updated = await cancelBooking(id);
+    if (updated) setBooking(updated);
+    setCancelling(false);
+    setConfirmCancel(false);
+  }
+
   if (booking === undefined) {
-    return (
-      <main className="mx-auto flex min-h-dvh w-full max-w-md items-center justify-center bg-[#f3f4f6]">
-        <p className="text-sm text-gray-400">Loading...</p>
-      </main>
-    );
+    return <LoadingScreen />;
   }
 
   if (booking === null) {
@@ -212,6 +248,44 @@ export default function BookingConfirmation({ id }: { id: string }) {
             </div>
           </div>
         </div>
+
+        {/* Cancel while still searching (booking hasn't been picked up by
+            the tracking screen yet since a driver isn't assigned) */}
+        {canCancel(status) && (
+          <div className="mt-4">
+            {!confirmCancel ? (
+              <button
+                type="button"
+                onClick={() => setConfirmCancel(true)}
+                className="w-full rounded-2xl border border-red-200 py-3 text-sm font-medium text-red-600 active:bg-red-50"
+              >
+                Cancel booking
+              </button>
+            ) : (
+              <div className="rounded-2xl bg-red-50 p-4 text-center">
+                <p className="text-sm text-red-700">Cancel this booking?</p>
+                <div className="mt-3 flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmCancel(false)}
+                    disabled={cancelling}
+                    className="flex-1 rounded-xl bg-white py-2.5 text-sm font-medium text-gray-700 disabled:opacity-60"
+                  >
+                    Keep booking
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCancel}
+                    disabled={cancelling}
+                    className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-medium text-white disabled:opacity-60"
+                  >
+                    {cancelling ? "Cancelling…" : "Yes, cancel"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="mt-auto pt-8">
           <Link
