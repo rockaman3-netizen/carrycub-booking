@@ -69,9 +69,15 @@ const EMPTY: BookingInput = {
   notes: "",
 };
 
-// The card each field row sits in: white, soft shadow, no flat/thin look.
+// The card each field row sits in: white, visibly raised off the page
+// background (stronger shadow + faint border), no flat/blended look.
 const cardClass =
-  "flex items-center gap-3 rounded-2xl bg-white px-4 py-3.5 shadow-[0_1px_3px_rgba(0,0,0,0.07),0_1px_2px_rgba(0,0,0,0.04)]";
+  "flex items-center gap-3 rounded-2xl bg-white px-4 py-3.5 shadow-[0_2px_8px_rgba(0,0,0,0.10),0_1px_3px_rgba(0,0,0,0.06)] border border-gray-100";
+
+// Same raised look but slimmer — used for the pickup/drop location cards,
+// which looked too wide/tall next to the map.
+const locationCardClass =
+  "flex items-center gap-3 rounded-2xl bg-white px-4 py-2.5 shadow-[0_2px_8px_rgba(0,0,0,0.10),0_1px_3px_rgba(0,0,0,0.06)] border border-gray-100";
 
 // Label above each value: bold and dark.
 const labelClass = "block text-[13px] font-semibold text-navy";
@@ -103,8 +109,6 @@ function ChevronIcon() {
   );
 }
 
-const STEPS = [1, 2, 3] as const;
-
 // Which BookingInput keys belong to each step — used to validate only the
 // fields visible on that step, so the customer only ever sees errors for
 // what's in front of them.
@@ -113,33 +117,6 @@ const STEP_FIELDS: Record<number, (keyof BookingInput)[]> = {
   2: ["vehicleId"],
   3: ["name", "mobile", "notes"],
 };
-
-// Fixed-width connectors so the 1–2–3 indicator is perfectly symmetric and
-// sits dead-center regardless of which step is active.
-function StepHeader({ step }: { step: number }) {
-  return (
-    <div className="mb-4 flex items-center justify-center">
-      {STEPS.map((n, i) => (
-        <div key={n} className="flex items-center">
-          <div
-            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition ${
-              n < step
-                ? "bg-brand text-white"
-                : n === step
-                ? "bg-brand text-white ring-4 ring-orange-100"
-                : "bg-gray-100 text-gray-400"
-            }`}
-          >
-            {n < step ? "✓" : n}
-          </div>
-          {i < STEPS.length - 1 && (
-            <div className={`mx-2 h-0.5 w-10 rounded ${n < step ? "bg-brand" : "bg-gray-100"}`} />
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
 
 // Shared autocomplete dropdown for the pickup/drop fields. Debounces the
 // query, shows up to 5 real OSM suggestions, and lets the customer tap one
@@ -394,14 +371,12 @@ export default function BookingForm() {
   return (
     <form onSubmit={handleSubmit} noValidate className="flex flex-1 flex-col">
       <div className="flex-1 px-5 pt-5">
-        <StepHeader step={step} />
-
         {/* ───────── Step 1: Location ───────── */}
         {step === 1 && (
         <>
         <div className="flex flex-col gap-2.5">
           {/* Pickup */}
-          <div className={cardClass}>
+          <div className={locationCardClass}>
             <span className="h-[11px] w-[11px] shrink-0 rounded-full bg-brand" />
             <div className="min-w-0 flex-1">
               <span className={labelClass}>Pickup location</span>
@@ -446,7 +421,7 @@ export default function BookingForm() {
           </div>
 
           {/* Drop */}
-          <div className={cardClass}>
+          <div className={locationCardClass}>
             <span className="h-[11px] w-[11px] shrink-0 rounded-full bg-navy" />
             <div className="min-w-0 flex-1">
               <span className={labelClass}>Drop location</span>
@@ -471,12 +446,12 @@ export default function BookingForm() {
           </p>
         )}
 
-        <p className="mt-4 text-xs text-gray-400">
+        <p className="mt-5 text-xs text-gray-400">
           Currently serving Jamshedpur &amp; Adityapur only
         </p>
 
         {/* Real OpenStreetMap: pickup / drop pins appear as the addresses resolve */}
-        <div className="mt-3">
+        <div className="mt-6">
           <TrackingMap
             pickup={mapPickup}
             drop={mapDrop}
