@@ -9,6 +9,11 @@ import { currentDriverId } from "@/lib/driver-auth";
 import { usePolling } from "@/lib/poll";
 import Link from "next/link";
 
+// Driver keeps 75% of the fare on every delivered order (25% platform
+// commission). Cancelled bookings never earned anything, so they're
+// excluded from both the count and the total.
+const DRIVER_SHARE = 0.75;
+
 export default function DriverBookingList() {
   const [bookings, setBookings] = useState<StoredBooking[]>([]);
 
@@ -20,10 +25,31 @@ export default function DriverBookingList() {
   const active = bookings.filter((b) => bucketOf(b.status) === "active" || b.status === "assigned");
   const done = bookings.filter((b) => bucketOf(b.status) === "completed" || bucketOf(b.status) === "cancelled");
 
+  const delivered = bookings.filter((b) => b.status === "delivered");
+  const totalOrders = delivered.length;
+  const totalEarnings = delivered.reduce(
+    (sum, b) => sum + (b.estimatedFare != null ? b.estimatedFare * DRIVER_SHARE : 0),
+    0,
+  );
+
   return (
     <div className="px-5 py-6">
       <h1 className="text-lg font-bold text-navy">Assigned bookings</h1>
       <p className="text-xs text-gray-400">Live data · synced from Google Sheets</p>
+
+      {/* Earnings summary */}
+      <div className="mt-4 grid grid-cols-2 gap-2.5">
+        <div className="rounded-2xl border border-gray-200 bg-white px-4 py-3.5">
+          <p className="text-[11px] font-medium text-gray-500">Orders Completed</p>
+          <p className="mt-1 text-xl font-bold text-navy">{totalOrders}</p>
+        </div>
+        <div className="rounded-2xl border border-gray-200 bg-white px-4 py-3.5">
+          <p className="text-[11px] font-medium text-gray-500">Total Earnings</p>
+          <p className="mt-1 text-xl font-bold text-navy">
+            ₹{Math.round(totalEarnings)}
+          </p>
+        </div>
+      </div>
 
       <div className="mt-4 flex flex-col gap-2.5">
         {active.length === 0 ? (
