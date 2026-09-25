@@ -1,80 +1,77 @@
 // src/lib/push.ts
+// SERVER ONLY. Sends FCM push notifications using the same Firebase
+// service account credentials as src/lib/sheets.ts (REST API, no
+// firebase-admin SDK — works on Cloudflare Workers).
 
-const FCM_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
-const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+import { SignJWT, importPKCS8 } from "jose";
 
-function base64UrlEncode(input: ArrayBuffer | string): string {
-  let bytes: Uint8Array;
-  if (typeof input === 'string') {
-    bytes = new TextEncoder().encode(input);
-  } else {
-    bytes = new Uint8Array(input);
-  }
-  let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
+function env(name: string): string {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing env var: ${name}`);
+  return v;
 }
 
-async function getGoogleAccessToken(): Promise<string> {
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL!;
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY!.replace(/\\n/g, '\n');
+const projectId = () => process.env.FIREBASE_PROJECT_ID || "carrycub-truck-booking";
 
-  const header = { alg: 'RS256', typ: 'JWT' };
+// Same key-cleaning logic as sheets.ts — accepts the key pasted in
+// almost any form (whole JSON, with/without BEGIN/END lines, literal \n, etc.)
+function cleanPrivateKey(): string {
+  let raw = env("FIREBASE_PRIVATE_KEY").trim();
+  if (raw.startsWith("{")) {
+    try {
+      raw = JSON.parse(raw).private_key || raw;
+    } catch {}
+  }
+  raw = raw.replace(/\\n/g, "\n");
+
+  const begin = raw.match(/BEGIN\s+PRIVATE\s+KEY/);
+  if (begin && begin.index !== undefined) raw = raw.slice(begin.index + begin[0].length);
+  const end = raw.search(/END\s+PRIVATE\s+KEY/);
+  if (end >= 0) raw = raw.slice(0, end);
+
+  let body = raw.replace(/[^A-Za-z0-9+/=]/g, "");
+  const start = body.indexOf("MII");
+  if (start > 0 && start < 12) body = body.slice(start);
+
+  if (body.length < 1000) {
+    throw new Error(`FIREBASE_PRIVATE_KEY incomplete (only ${body.length} chars found)`);
+  }
+  if (!body.startsWith("MII")) {
+    throw new Error(`FIREBASE_PRIVATE_KEY does not look like a key (starts with "${body.slice(0, 4)}")`);
+  }
+  const lines = (body.match(/.{1,64}/g) as string[]).join("\n");
+  return `-----BEGIN PRIVATE KEY-----\n${lines}\n-----END PRIVATE KEY-----\n`;
+}
+
+let cachedToken: { value: string; exp: number } | null = null;
+
+async function getFcmToken(): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
-  const claimSet = {
-    iss: clientEmail,
-    scope: FCM_SCOPE,
-    aud: GOOGLE_TOKEN_URL,
-    iat: now,
-    exp: now + 3600,
-  };
+  if (cachedToken && cachedToken.exp - 60 > now) return cachedToken.value;
 
-  const encodedHeader = base64UrlEncode(JSON.stringify(header));
-  const encodedClaimSet = base64UrlEncode(JSON.stringify(claimSet));
-  const unsignedJWT = `${encodedHeader}.${encodedClaimSet}`;
+  const email = env("FIREBASE_CLIENT_EMAIL").trim();
+  const key = await importPKCS8(cleanPrivateKey(), "RS256");
 
-  const pemContents = privateKey
-    .replace('-----BEGIN PRIVATE KEY-----', '')
-    .replace('-----END PRIVATE KEY-----', '')
-    .replace(/\s/g, '');
-  const binaryDer = Uint8Array.from(atob(pemContents), (c) => c.charCodeAt(0));
+  const assertion = await new SignJWT({ scope: "https://www.googleapis.com/auth/firebase.messaging" })
+    .setProtectedHeader({ alg: "RS256", typ: "JWT" })
+    .setIssuer(email)
+    .setSubject(email)
+    .setAudience("https://oauth2.googleapis.com/token")
+    .setIssuedAt(now)
+    .setExpirationTime(now + 3600)
+    .sign(key);
 
-  const cryptoKey = await crypto.subtle.importKey(
-    'pkcs8',
-    binaryDer.buffer,
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-
-  const signature = await crypto.subtle.sign(
-    'RSASSA-PKCS1-v1_5',
-    cryptoKey,
-    new TextEncoder().encode(unsignedJWT)
-  );
-
-  const signedJWT = `${unsignedJWT}.${base64UrlEncode(signature)}`;
-
-  const res = await fetch(GOOGLE_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-      assertion: signedJWT,
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion,
     }),
   });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Google access token fetch failed: ${res.status} ${errText}`);
-  }
-
-  const data = (await res.json()) as { access_token: string };
+  if (!res.ok) throw new Error(`Firebase auth (FCM) failed (${res.status})`);
+  const data = (await res.json()) as { access_token: string; expires_in: number };
+  cachedToken = { value: data.access_token, exp: now + data.expires_in };
   return data.access_token;
 }
 
@@ -82,28 +79,27 @@ export async function sendPushToTokens(
   tokens: string[],
   title: string,
   body: string,
-  data?: Record<string, string>
+  data?: Record<string, string>,
 ): Promise<void> {
   if (!tokens || tokens.length === 0) return;
 
-  const projectId = process.env.FIREBASE_PROJECT_ID!;
   let accessToken: string;
   try {
-    accessToken = await getGoogleAccessToken();
+    accessToken = await getFcmToken();
   } catch (err) {
-    console.error('Push notification: access token error', err);
+    console.error("Push notification: could not get access token", err);
     return;
   }
 
-  const url = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
+  const url = `https://fcm.googleapis.com/v1/projects/${projectId()}/messages:send`;
 
   const results = await Promise.allSettled(
     tokens.map((token) =>
       fetch(url, {
-        method: 'POST',
+        method: "POST",
         headers: {
           Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           message: {
@@ -111,26 +107,22 @@ export async function sendPushToTokens(
             notification: { title, body },
             data: data || {},
             webpush: {
-              notification: {
-                title,
-                body,
-                icon: '/icon-192.png',
-              },
-              fcm_options: {
-                link: '/',
-              },
+              notification: { title, body, icon: "/icon-192.png" },
+              fcm_options: { link: "/" },
             },
           },
         }),
-      })
-    )
+      }),
+    ),
   );
 
-  results.forEach((r, i) => {
-    if (r.status === 'rejected') {
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (r.status === "rejected") {
       console.error(`Push failed for token ${tokens[i]}:`, r.reason);
     } else if (!r.value.ok) {
-      r.value.text().then((t) => console.error(`Push failed (${r.value.status}) for token ${tokens[i]}:`, t));
+      const text = await r.value.text();
+      console.error(`Push failed (${r.value.status}) for token ${tokens[i]}:`, text);
     }
-  });
+  }
 }
