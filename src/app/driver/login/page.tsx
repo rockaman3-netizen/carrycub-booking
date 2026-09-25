@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { currentDriver, driverLogin } from "@/lib/driver-auth";
@@ -59,10 +58,6 @@ export default function DriverLoginPage() {
             </p>
           )}
         </div>
-
-        <Link href="/" className="mt-6 text-center text-sm text-gray-500">
-          ← Back to customer app
-        </Link>
       </div>
     </main>
   );
