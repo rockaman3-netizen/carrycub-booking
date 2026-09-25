@@ -9,6 +9,12 @@
 
 export type LatLng = { lat: number; lng: number };
 
+export type AddressSuggestion = {
+  label: string;
+  lat: number;
+  lng: number;
+};
+
 const CACHE_PREFIX = "carrycub:geocode:";
 
 function cacheGet(key: string): LatLng | null | undefined {
@@ -67,6 +73,47 @@ export async function geocodeAddress(address: string): Promise<LatLng | null> {
     return loc;
   } catch {
     return null; // offline / blocked — never substitute a fake location
+  }
+}
+
+/**
+ * Live-suggestions for the pickup/drop autocomplete dropdown. Returns up to
+ * `limit` candidate addresses with their coordinates, biased toward
+ * Jamshedpur/Adityapur (same rule as geocodeAddress). Returns an empty
+ * array — never a fabricated suggestion — if nothing matches or the
+ * request fails.
+ */
+export async function searchAddressSuggestions(
+  query: string,
+  limit = 5,
+): Promise<AddressSuggestion[]> {
+  const trimmed = query.trim();
+  if (trimmed.length < 3) return [];
+
+  const q = /jamshedpur|adityapur|jharkhand/i.test(trimmed)
+    ? trimmed
+    : `${trimmed}, Jamshedpur, Jharkhand, India`;
+
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=${limit}&q=${encodeURIComponent(q)}`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!res.ok) return [];
+    const data = (await res.json()) as Array<{
+      lat: string;
+      lon: string;
+      display_name: string;
+    }>;
+    return data
+      .map((d) => ({
+        label: d.display_name,
+        lat: parseFloat(d.lat),
+        lng: parseFloat(d.lon),
+      }))
+      .filter((s) => !Number.isNaN(s.lat) && !Number.isNaN(s.lng));
+  } catch {
+    return []; // offline / blocked — no suggestions, never fabricated ones
   }
 }
 
