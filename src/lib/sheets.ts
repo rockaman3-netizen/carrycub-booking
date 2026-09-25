@@ -1,7 +1,7 @@
 // SERVER ONLY. Never import this file from a "use client" component.
 // Data source: Firebase Firestore via REST API + service account
 // (works on Cloudflare Workers and on the free Spark plan).
-// Collections: bookings, drivers, locations.
+// Collections: bookings, drivers, locations, device_tokens.
 // (File name sheets.ts is kept so other imports don't change.)
 
 import { SignJWT, importPKCS8 } from "jose";
@@ -10,6 +10,7 @@ import type { StatusId } from "@/lib/status";
 const BOOKINGS = "bookings";
 const DRIVERS = "drivers";
 const LOCATIONS = "locations";
+const DEVICE_TOKENS = "device_tokens";
 
 const MAX_BOOKINGS = 200; // listBookings returns the newest N (keeps Firestore reads low)
 const MAX_RETRIES = 5; // retries when two people edit the same booking at once
@@ -48,8 +49,19 @@ export type SheetDriver = {
   available: boolean;
 };
 
+export type DeviceTokenRole = "admin" | "driver" | "customer";
+
+export type SheetDeviceToken = {
+  token: string;
+  role: DeviceTokenRole;
+  driverId?: string | null;
+  bookingId?: string | null;
+  createdAt: string;
+};
+
 type Loc = { lat: number; lng: number; updatedAt: string };
 type Result = { booking: SheetBooking | null; error?: string };
+type r = Result;
 
 // ---- Firestore REST plumbing ----
 
@@ -361,7 +373,7 @@ export async function createBooking(input: {
 async function mutateBooking(
   id: string,
   mutate: (current: SheetBooking) => Partial<SheetBooking> | { error: string },
-): Promise<Result> {
+): Promise<r> {
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     const raw = await getRaw(BOOKINGS, id);
     if (!raw) return { booking: null, error: "Booking not found" };
@@ -378,7 +390,7 @@ async function mutateBooking(
   return { booking: null, error: "Booking is busy, please try again" };
 }
 
-export async function assignDriver(bookingId: string, driver: SheetDriver): Promise<Result> {
+export async function assignDriver(bookingId: string, driver: SheetDriver): Promise<r> {
   const [result] = await Promise.all([
     mutateBooking(bookingId, () => ({
       driverId: driver.id,
@@ -396,7 +408,7 @@ export async function assignDriver(bookingId: string, driver: SheetDriver): Prom
 
 const NEEDS_DRIVER: StatusId[] = ["assigned", "accepted", "arriving", "arrived", "started", "delivered"];
 
-export async function adminChangeStatus(bookingId: string, status: StatusId): Promise<Result> {
+export async function adminChangeStatus(bookingId: string, status: StatusId): Promise<r> {
   const result = await mutateBooking(bookingId, (current) => {
     if (NEEDS_DRIVER.includes(status) && !current.driverId) {
       return { error: "Assign a driver first" };
@@ -414,7 +426,7 @@ export async function adminChangeStatus(bookingId: string, status: StatusId): Pr
   return result;
 }
 
-export async function customerCancel(bookingId: string): Promise<Result> {
+export async function customerCancel(bookingId: string): Promise<r> {
   const result = await mutateBooking(bookingId, (current) => {
     if (current.status === "delivered" || current.status === "cancelled") {
       return { error: "This booking can no longer be cancelled" };
@@ -425,7 +437,7 @@ export async function customerCancel(bookingId: string): Promise<Result> {
   return result;
 }
 
-export async function driverAccept(bookingId: string, driverId: string): Promise<Result> {
+export async function driverAccept(bookingId: string, driverId: string): Promise<r> {
   return mutateBooking(bookingId, (current) => {
     if (current.driverId !== driverId) return { error: "This booking isn't assigned to you" };
     if (current.status !== "assigned") return { error: "Booking already accepted or moved on" };
@@ -433,7 +445,7 @@ export async function driverAccept(bookingId: string, driverId: string): Promise
   });
 }
 
-export async function driverReject(bookingId: string, driverId: string): Promise<Result> {
+export async function driverReject(bookingId: string, driverId: string): Promise<r> {
   const result = await mutateBooking(bookingId, (current) => {
     if (current.driverId !== driverId) return { error: "This booking isn't assigned to you" };
     if (current.status !== "assigned") return { error: "Can only reject before accepting" };
@@ -455,7 +467,7 @@ export async function driverAdvance(
   driverId: string,
   status: StatusId,
   expectedNext: StatusId | null,
-): Promise<Result> {
+): Promise<r> {
   const result = await mutateBooking(bookingId, (current) => {
     if (current.driverId !== driverId) return { error: "This booking isn't assigned to you" };
     if (expectedNext !== status) return { error: "Statuses must be updated in order" };
@@ -538,4 +550,39 @@ export async function upsertLocation(
 async function clearLocation(bookingId: string): Promise<void> {
   const r = await call("DELETE", `${docsUrl()}/${LOCATIONS}/${encodeURIComponent(bookingId)}`);
   if (!r.ok && r.status !== 404) fail(`delete ${LOCATIONS}/${bookingId}`, r);
+}
+
+// ---- Device tokens (FCM push notifications, one doc per token) ----
+
+function toDeviceToken(d: RawDoc): SheetDeviceToken {
+  return decodeDoc(d) as SheetDeviceToken;
+}
+
+// Registers (or re-registers) a device's push token. Using the token itself
+// as the doc ID means the same device registering again just overwrites its
+// old entry instead of creating duplicates.
+export async function saveDeviceToken(input: {
+  token: string;
+  role: DeviceTokenRole;
+  driverId?: string | null;
+  bookingId?: string | null;
+}): Promise<void> {
+  const data: SheetDeviceToken = {
+    token: input.token,
+    role: input.role,
+    driverId: input.driverId ?? null,
+    bookingId: input.bookingId ?? null,
+    createdAt: new Date().toISOString(),
+  };
+  const r = await call("PATCH", `${docsUrl()}/${DEVICE_TOKENS}/${encodeURIComponent(input.token)}`, {
+    fields: encodeFields(data),
+  });
+  if (!r.ok) fail(`write ${DEVICE_TOKENS}/${input.token}`, r);
+}
+
+// Pass roles to filter (e.g. ["admin", "driver"]); omit to get every saved token.
+export async function listTokens(roles?: DeviceTokenRole[]): Promise<SheetDeviceToken[]> {
+  const docs = await listAll(DEVICE_TOKENS);
+  const tokens = docs.map(toDeviceToken);
+  return roles && roles.length > 0 ? tokens.filter((t) => roles.includes(t.role)) : tokens;
 }
