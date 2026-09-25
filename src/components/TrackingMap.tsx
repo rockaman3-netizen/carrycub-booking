@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import "leaflet/dist/leaflet.css";
-import type { Map as LeafletMap, Marker } from "leaflet";
+import type { Map as LeafletMap, Marker, Polyline } from "leaflet";
 
 export type LatLng = { lat: number; lng: number };
 
@@ -54,6 +54,8 @@ export default function TrackingMap({ pickup, drop, driver, className, emptyText
   const markersRef = useRef<{ pickup?: Marker; drop?: Marker; driver?: Marker }>({});
   const glideRef = useRef<number>(0);
   const fitKeyRef = useRef<string>("");
+  const routeLineRef = useRef<Polyline | null>(null);
+  const [distanceKm, setDistanceKm] = useState<number | null>(null);
 
   // Initialize the map once.
   useEffect(() => {
@@ -82,6 +84,8 @@ export default function TrackingMap({ pickup, drop, driver, className, emptyText
       cancelled = true;
       cancelAnimationFrame(glideRef.current);
       fitKeyRef.current = "";
+      routeLineRef.current?.remove();
+      routeLineRef.current = null;
       mapRef.current?.remove();
       mapRef.current = null;
       markersRef.current = {};
@@ -103,6 +107,61 @@ export default function TrackingMap({ pickup, drop, driver, className, emptyText
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pickup?.lat, pickup?.lng, drop?.lat, drop?.lng, driver?.lat, driver?.lng]);
+
+  // Draw the actual road route between pickup and drop, and compute the
+  // real "by road" distance — via OSRM's free public routing API (no key
+  // needed). Falls back to just markers (no line/distance) if the request
+  // fails, so a flaky network never breaks the map itself.
+  useEffect(() => {
+    const valid = (p?: LatLng | null) => p && !Number.isNaN(p.lat) && !Number.isNaN(p.lng);
+
+    if (!mapRef.current || !valid(pickup) || !valid(drop)) {
+      routeLineRef.current?.remove();
+      routeLineRef.current = null;
+      setDistanceKm(null);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      const L = (await import("leaflet")).default;
+      try {
+        const url = `https://router.project-osrm.org/route/v1/driving/${pickup!.lng},${pickup!.lat};${drop!.lng},${drop!.lat}?overview=full&geometries=geojson`;
+        const res = await fetch(url);
+        const data = await res.json();
+        if (cancelled) return;
+
+        const route = data?.routes?.[0];
+        const map = mapRef.current;
+        if (!route || !map) {
+          setDistanceKm(null);
+          return;
+        }
+
+        const coords: [number, number][] = route.geometry.coordinates.map(
+          (c: [number, number]) => [c[1], c[0]],
+        );
+
+        routeLineRef.current?.remove();
+        routeLineRef.current = L.polyline(coords, {
+          color: "#0b1b3f",
+          weight: 4,
+          opacity: 0.85,
+          lineCap: "round",
+          lineJoin: "round",
+        }).addTo(map);
+
+        setDistanceKm(Math.round((route.distance / 1000) * 10) / 10);
+      } catch {
+        if (!cancelled) setDistanceKm(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickup?.lat, pickup?.lng, drop?.lat, drop?.lng]);
 
   function syncMarkers(L: typeof import("leaflet")) {
     const map = mapRef.current;
@@ -213,6 +272,11 @@ export default function TrackingMap({ pickup, drop, driver, className, emptyText
       {!hasAnyPoint && emptyText !== null && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-white/80 px-6 text-center text-xs text-gray-500">
           {emptyText ?? "Map will show pickup, drop, and the driver's live location once available."}
+        </div>
+      )}
+      {distanceKm !== null && (
+        <div className="pointer-events-none absolute left-1/2 top-3 z-[400] -translate-x-1/2 whitespace-nowrap rounded-full bg-navy px-3.5 py-1.5 text-xs font-semibold text-white shadow-[0_4px_14px_rgba(0,0,0,0.3)]">
+          {distanceKm} km by road
         </div>
       )}
     </div>
