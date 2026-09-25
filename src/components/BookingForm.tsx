@@ -459,9 +459,9 @@ export default function BookingForm() {
 
         {/* ───────── Step 2: Vehicle ───────── */}
         {step === 2 && (
-        <div className="pb-4">
+        <div className="pb-10">
           <span className="mb-3 block text-[13px] font-medium text-gray-500">Vehicle type</span>
-          <div className="flex flex-col gap-2.5">
+          <div className="flex flex-col gap-1.5">
             {VEHICLES.map((v) => {
               const selected = values.vehicleId === v.id;
               const fare = routeReady ? estimateFare(v.id, mapPickup!, mapDrop!) : null;
