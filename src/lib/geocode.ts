@@ -15,6 +15,40 @@ export type AddressSuggestion = {
   lng: number;
 };
 
+// "pickup" biases toward Jamshedpur/Adityapur (CarryCub's actual pickup
+// service area) and, for autocomplete, hard-restricts suggestions to it.
+// "drop" biases toward the whole state of Jharkhand instead, since CarryCub
+// delivers anywhere in-state. Defaults to "drop" for callers that don't care.
+export type GeoScope = "pickup" | "drop";
+
+// Approx bounding box around the Jamshedpur + Adityapur urban area —
+// CarryCub's actual pickup service area today.
+export const PICKUP_SERVICE_BOUNDS = {
+  minLat: 22.62,
+  maxLat: 22.92,
+  minLng: 85.98,
+  maxLng: 86.32,
+};
+
+// Loose bounding box for the state of Jharkhand — used only to bias (not
+// restrict) drop-location results toward the state.
+const JHARKHAND_BOUNDS = {
+  minLat: 21.9,
+  maxLat: 25.35,
+  minLng: 83.3,
+  maxLng: 87.9,
+};
+
+/** Whether a resolved point falls inside CarryCub's pickup service area. */
+export function isWithinPickupServiceArea(loc: LatLng): boolean {
+  return (
+    loc.lat >= PICKUP_SERVICE_BOUNDS.minLat &&
+    loc.lat <= PICKUP_SERVICE_BOUNDS.maxLat &&
+    loc.lng >= PICKUP_SERVICE_BOUNDS.minLng &&
+    loc.lng <= PICKUP_SERVICE_BOUNDS.maxLng
+  );
+}
+
 const CACHE_PREFIX = "carrycub:geocode:";
 
 // Nominatim occasionally fails transiently — a 429 (rate-limited), a 5xx, or
@@ -62,40 +96,79 @@ function cacheSet(key: string, value: LatLng | null) {
   }
 }
 
+function viewboxParam(b: {
+  minLat: number;
+  maxLat: number;
+  minLng: number;
+  maxLng: number;
+}): string {
+  // Nominatim's viewbox format is "left,top,right,bottom" = minLng,maxLat,maxLng,minLat.
+  return `${b.minLng},${b.maxLat},${b.maxLng},${b.minLat}`;
+}
+
+// CarryCub only serves Jamshedpur/Adityapur for pickup, and (for drop) all
+// of Jharkhand — bias the search accordingly unless the address already
+// names the relevant place, so short inputs like "Bistupur" resolve to the
+// right city instead of a random global match.
+function buildQuery(trimmed: string, scope: GeoScope): string {
+  if (scope === "pickup") {
+    return /jamshedpur|adityapur/i.test(trimmed)
+      ? trimmed
+      : `${trimmed}, Jamshedpur, Jharkhand, India`;
+  }
+  return /jharkhand/i.test(trimmed) ? trimmed : `${trimmed}, Jharkhand, India`;
+}
+
+function buildUrl(q: string, limit: number, scope: GeoScope, restrict: boolean): string {
+  const base = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=${limit}&q=${encodeURIComponent(q)}`;
+  if (scope === "pickup" && restrict) {
+    // Autocomplete for pickup only ever offers addresses inside the
+    // serviceable area — nothing outside it can even be suggested.
+    return `${base}&viewbox=${viewboxParam(PICKUP_SERVICE_BOUNDS)}&bounded=1`;
+  }
+  if (scope === "drop") {
+    // Bias toward Jharkhand without excluding results outside it.
+    return `${base}&viewbox=${viewboxParam(JHARKHAND_BOUNDS)}`;
+  }
+  // Pickup, manual full-address geocode: left unrestricted on purpose so a
+  // customer who types an out-of-area address still resolves to a real
+  // point — the caller then checks isWithinPickupServiceArea() itself and
+  // shows a clean "not serviceable" message, instead of this silently
+  // returning nothing.
+  return base;
+}
+
 /**
  * Resolves a free-text address to real lat/lng via OSM Nominatim.
  * Returns null (never a fabricated point) if it can't be resolved.
  */
-export async function geocodeAddress(address: string): Promise<LatLng | null> {
+export async function geocodeAddress(
+  address: string,
+  scope: GeoScope = "drop",
+): Promise<LatLng | null> {
   const trimmed = address.trim();
   if (!trimmed) return null;
 
-  const cached = cacheGet(trimmed);
+  const cacheKey = `${scope}:${trimmed}`;
+  const cached = cacheGet(cacheKey);
   if (cached !== undefined) return cached;
 
-  // CarryCub only serves Jamshedpur/Adityapur today — bias the search there
-  // unless the address already names a city, so short inputs like
-  // "Bistupur" resolve to the right place instead of a random global match.
-  const q = /jamshedpur|adityapur|jharkhand|jamshedpur/i.test(trimmed)
-    ? trimmed
-    : `${trimmed}, Jamshedpur, Jharkhand, India`;
+  const q = buildQuery(trimmed, scope);
 
   try {
-    const res = await fetchWithRetry(
-      `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(q)}`,
-    );
+    const res = await fetchWithRetry(buildUrl(q, 1, scope, false));
     if (!res || !res.ok) return null;
     const data = (await res.json()) as Array<{ lat: string; lon: string }>;
     if (!data.length) {
-      cacheSet(trimmed, null);
+      cacheSet(cacheKey, null);
       return null;
     }
     const loc: LatLng = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
     if (Number.isNaN(loc.lat) || Number.isNaN(loc.lng)) {
-      cacheSet(trimmed, null);
+      cacheSet(cacheKey, null);
       return null;
     }
-    cacheSet(trimmed, loc);
+    cacheSet(cacheKey, loc);
     return loc;
   } catch {
     return null; // offline / blocked — never substitute a fake location
@@ -104,26 +177,24 @@ export async function geocodeAddress(address: string): Promise<LatLng | null> {
 
 /**
  * Live-suggestions for the pickup/drop autocomplete dropdown. Returns up to
- * `limit` candidate addresses with their coordinates, biased toward
- * Jamshedpur/Adityapur (same rule as geocodeAddress). Returns an empty
- * array — never a fabricated suggestion — if nothing matches or the
- * request fails.
+ * `limit` candidate addresses with their coordinates. For "pickup", results
+ * are hard-restricted to CarryCub's serviceable Jamshedpur/Adityapur area;
+ * for "drop", results are biased toward Jharkhand but not restricted to it.
+ * Returns an empty array — never a fabricated suggestion — if nothing
+ * matches or the request fails.
  */
 export async function searchAddressSuggestions(
   query: string,
   limit = 5,
+  scope: GeoScope = "drop",
 ): Promise<AddressSuggestion[]> {
   const trimmed = query.trim();
   if (trimmed.length < 3) return [];
 
-  const q = /jamshedpur|adityapur|jharkhand/i.test(trimmed)
-    ? trimmed
-    : `${trimmed}, Jamshedpur, Jharkhand, India`;
+  const q = buildQuery(trimmed, scope);
 
   try {
-    const res = await fetchWithRetry(
-      `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=${limit}&q=${encodeURIComponent(q)}`,
-    );
+    const res = await fetchWithRetry(buildUrl(q, limit, scope, true));
     if (!res || !res.ok) return [];
     const data = (await res.json()) as Array<{
       lat: string;
