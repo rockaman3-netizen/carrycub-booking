@@ -578,3 +578,127 @@ export default function BookingForm() {
         {step === 3 && (
         <div className="space-y-3 pb-6">
           {/* Name */}
+          <div className="rounded-2xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-navy">
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden>
+                  <circle cx="12" cy="8" r="3.4" fill="white" />
+                  <path
+                    d="M5 19c0-3.6 3.1-5.6 7-5.6s7 2 7 5.6"
+                    stroke="white"
+                    strokeWidth="2"
+                    fill="none"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </span>
+              <div className="min-w-0 flex-1">
+                <span className="block text-[13px] font-semibold text-gray-700">Your name</span>
+                <input
+                  className={underline}
+                  placeholder="Full name"
+                  value={values.name}
+                  onChange={(e) => set("name", e.target.value)}
+                  autoComplete="name"
+                  maxLength={60}
+                />
+              </div>
+              <ChevronIcon />
+            </div>
+            <Err text={errors.name} />
+          </div>
+
+          {/* Mobile */}
+          <div className="rounded-2xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand">
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden>
+                  <path
+                    d="M6.6 10.8c1.2 2.4 3.2 4.4 5.6 5.6l2-2c.3-.3.7-.4 1-.2 1 .4 2.1.6 3.2.6.6 0 1 .4 1 1v3c0 .6-.4 1-1 1C10.7 20.8 3.2 13.3 3.2 4.6c0-.6.4-1 1-1h3c.6 0 1 .4 1 1 0 1.1.2 2.2.6 3.2.1.3 0 .7-.2 1l-2 2z"
+                    fill="white"
+                  />
+                </svg>
+              </span>
+              <div className="min-w-0 flex-1">
+                <span className="block text-[13px] font-semibold text-gray-700">Mobile number</span>
+                <div className="flex items-center gap-2">
+                  <span className="shrink-0 text-[15px] font-semibold text-gray-700">+91</span>
+                  <input
+                    className={underline}
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={10}
+                    placeholder="10-digit number"
+                    value={values.mobile}
+                    onChange={(e) => set("mobile", e.target.value.replace(/\D/g, ""))}
+                    autoComplete="tel-national"
+                  />
+                </div>
+              </div>
+              <ChevronIcon />
+            </div>
+            <Err text={errors.mobile} />
+          </div>
+
+          {/* Notes */}
+          <div className="rounded-2xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-400">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden>
+                  <rect x="5" y="4" width="14" height="16" rx="2" stroke="white" strokeWidth="1.6" />
+                  <path d="M8 9h8M8 13h8M8 17h5" stroke="white" strokeWidth="1.6" strokeLinecap="round" />
+                </svg>
+              </span>
+              <div className="min-w-0 flex-1">
+                <span className="block text-[13px] font-semibold text-gray-700">Notes (optional)</span>
+                <textarea
+                  className={underline}
+                  rows={2}
+                  placeholder="Floor, lift, items, landmark..."
+                  value={values.notes}
+                  onChange={(e) => set("notes", e.target.value)}
+                  maxLength={300}
+                />
+              </div>
+              <ChevronIcon />
+            </div>
+            <Err text={errors.notes} />
+          </div>
+        </div>
+        )}
+      </div>
+
+      <div className="sticky bottom-0 rounded-b-none border-t border-gray-100 bg-white px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        {submitError && <p className="mb-3 text-sm text-red-600">{submitError}</p>}
+        <div className="flex gap-3">
+          {step > 1 && (
+            <button
+              type="button"
+              onClick={goBack}
+              className="shrink-0 rounded-2xl border border-gray-200 bg-white px-5 py-3.5 text-base font-semibold text-navy active:bg-gray-50"
+            >
+              Back
+            </button>
+          )}
+          {step < 3 ? (
+            <button
+              type="button"
+              onClick={goNext}
+              className="w-full rounded-2xl bg-brand py-3.5 text-base font-semibold text-white active:bg-brand-dark"
+            >
+              Next
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full rounded-2xl bg-brand py-3.5 text-base font-semibold text-white active:bg-brand-dark disabled:opacity-60"
+            >
+              {submitting ? "Locating addresses…" : "Book Now"}
+            </button>
+          )}
+        </div>
+      </div>
+    </form>
+  );
+}
