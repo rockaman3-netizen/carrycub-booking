@@ -275,6 +275,10 @@ export default function BookingForm() {
   const [values, setValues] = useState<BookingInput>(EMPTY);
   const [errors, setErrors] = useState<BookingErrors>({});
   const [step, setStep] = useState(1);
+  // Guards against errors ever showing before the customer has actually
+  // tried to move on from THIS step. Even if `errors` somehow holds a
+  // stale value, nothing renders unless the current step was attempted.
+  const [attempted, setAttempted] = useState<Record<number, boolean>>({});
   const router = useRouter();
   const [gpsError, setGpsError] = useState("");
   const [gpsLoading, setGpsLoading] = useState(false);
@@ -364,11 +368,13 @@ export default function BookingForm() {
     }
     if (Object.keys(stepErrors).length > 0) {
       setErrors((e) => ({ ...e, ...stepErrors }));
+      setAttempted((a) => ({ ...a, [step]: true }));
       return;
     }
     // Fresh start on the step we're entering — never carry over an error
-    // from an earlier Book Now attempt on a different step.
+    // (or a stale "attempted" flag) from an earlier attempt on this step.
     setErrors({});
+    setAttempted((a) => ({ ...a, [step + 1]: false }));
     setStep((s) => Math.min(3, s + 1));
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -419,7 +425,10 @@ export default function BookingForm() {
       showUnserviceableToast();
     }
     setErrors(found);
-    if (Object.keys(found).length > 0) return;
+    if (Object.keys(found).length > 0) {
+      setAttempted((a) => ({ ...a, 3: true }));
+      return;
+    }
 
     const pickup = values.pickup.trim();
     const drop = values.drop.trim();
@@ -459,6 +468,10 @@ export default function BookingForm() {
   }
 
   const routeReady = mapPickup !== null && mapDrop !== null;
+  // Only ever surface an error for the step the customer is currently on,
+  // and only after they've tried to move past it once.
+  const stepAttempted = attempted[step] === true;
+  const err = (key: keyof BookingInput) => (stepAttempted ? errors[key] : undefined);
 
   return (
     <form onSubmit={handleSubmit} noValidate className="flex flex-1 flex-col">
@@ -481,7 +494,7 @@ export default function BookingForm() {
                   setMapPickup({ lat: s.lat, lng: s.lng });
                 }}
                 placeholder="Search address or use GPS"
-                error={errors.pickup}
+                error={err("pickup")}
                 scope="pickup"
               />
             </div>
@@ -525,7 +538,7 @@ export default function BookingForm() {
                   setMapDrop({ lat: s.lat, lng: s.lng });
                 }}
                 placeholder="Enter drop location"
-                error={errors.drop}
+                error={err("drop")}
                 scope="drop"
               />
             </div>
@@ -606,7 +619,7 @@ export default function BookingForm() {
               );
             })}
           </div>
-          <Err text={errors.vehicleId} />
+          <Err text={err("vehicleId")} />
 
           {!routeReady && (
             <p className="mt-3 text-center text-xs text-gray-400">
@@ -635,7 +648,7 @@ export default function BookingForm() {
             </div>
             <ChevronIcon />
           </div>
-          <Err text={errors.name} />
+          <Err text={err("name")} />
 
           {/* Mobile */}
           <div className={cardClass}>
@@ -657,7 +670,7 @@ export default function BookingForm() {
             </div>
             <ChevronIcon />
           </div>
-          <Err text={errors.mobile} />
+          <Err text={err("mobile")} />
 
           {/* Notes */}
           <div className={cardClass}>
@@ -674,7 +687,7 @@ export default function BookingForm() {
             </div>
             <ChevronIcon />
           </div>
-          <Err text={errors.notes} />
+          <Err text={err("notes")} />
         </div>
         )}
       </div>
