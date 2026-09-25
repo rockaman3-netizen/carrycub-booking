@@ -26,11 +26,20 @@ export async function registerPushToken(input: {
 }): Promise<void> {
   try {
     if (typeof window === "undefined") return;
-    if (!(await isSupported())) return;
-    if (!("serviceWorker" in navigator)) return;
+    if (!(await isSupported())) {
+      alert("Push not supported on this browser");
+      return;
+    }
+    if (!("serviceWorker" in navigator)) {
+      alert("Service worker not supported");
+      return;
+    }
 
     const permission = await Notification.requestPermission();
-    if (permission !== "granted") return;
+    if (permission !== "granted") {
+      alert(`Permission not granted: ${permission}`);
+      return;
+    }
 
     const registration = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
     const messaging = getMessaging(app());
@@ -38,14 +47,22 @@ export async function registerPushToken(input: {
       vapidKey: VAPID_KEY,
       serviceWorkerRegistration: registration,
     });
-    if (!token) return;
+    if (!token) {
+      alert("Could not get FCM token (token was empty)");
+      return;
+    }
 
-    await fetch("/api/notifications/register", {
+    const res = await fetch("/api/notifications/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token, ...input }),
     });
-  } catch {
-    /* notifications are a nice-to-have, never fatal */
+    if (!res.ok) {
+      alert(`Register API failed: ${res.status} ${await res.text()}`);
+    } else {
+      alert("Token registered successfully!");
+    }
+  } catch (err) {
+    alert(`Push setup error: ${err}`);
   }
 }
