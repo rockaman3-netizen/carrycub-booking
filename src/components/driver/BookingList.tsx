@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { vehicleById } from "@/lib/vehicles";
 import { fmtTime } from "@/lib/format";
 import { bucketOf, getStatus } from "@/lib/status";
 import { listDriverBookings, type StoredBooking } from "@/lib/store";
 import { currentDriverId } from "@/lib/driver-auth";
 import { usePolling } from "@/lib/poll";
+import { registerPushToken } from "@/lib/firebase-client";
 import Link from "next/link";
 
 // Driver keeps 75% of the fare on every delivered order (25% platform
@@ -20,6 +21,13 @@ export default function DriverBookingList() {
   usePolling(async () => {
     const id = currentDriverId();
     if (id) setBookings(await listDriverBookings(id));
+  }, []);
+
+  // Ask for notification permission once, right after the driver's ID is
+  // known, so new-booking pushes reach this device even when it's locked.
+  useEffect(() => {
+    const id = currentDriverId();
+    if (id) registerPushToken({ role: "driver", driverId: id });
   }, []);
 
   const active = bookings.filter((b) => bucketOf(b.status) === "active" || b.status === "assigned");
