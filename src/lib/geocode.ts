@@ -17,6 +17,33 @@ export type AddressSuggestion = {
 
 const CACHE_PREFIX = "carrycub:geocode:";
 
+// Nominatim occasionally fails transiently — a 429 (rate-limited), a 5xx, or
+// a plain network blip (common on mobile data switching towers/VoLTE↔5G).
+// Retry those a couple of times with backoff before giving up. A genuine
+// "no results" response is NOT retried here — that's a real answer, not a
+// glitch — the caller handles that case itself.
+async function fetchWithRetry(
+  url: string,
+  attempts = 3,
+  delayMs = 600,
+): Promise<Response | null> {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const res = await fetch(url, { headers: { Accept: "application/json" } });
+      if (res.ok || !(res.status === 429 || res.status >= 500)) {
+        // Success, or a non-retryable error (e.g. a bad request) — stop here.
+        return res;
+      }
+    } catch {
+      // Network error — fall through to retry below.
+    }
+    if (i < attempts - 1) {
+      await new Promise((r) => setTimeout(r, delayMs * (i + 1)));
+    }
+  }
+  return null;
+}
+
 function cacheGet(key: string): LatLng | null | undefined {
   try {
     const raw = localStorage.getItem(CACHE_PREFIX + key);
@@ -54,11 +81,10 @@ export async function geocodeAddress(address: string): Promise<LatLng | null> {
     : `${trimmed}, Jamshedpur, Jharkhand, India`;
 
   try {
-    const res = await fetch(
+    const res = await fetchWithRetry(
       `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(q)}`,
-      { headers: { Accept: "application/json" } },
     );
-    if (!res.ok) return null;
+    if (!res || !res.ok) return null;
     const data = (await res.json()) as Array<{ lat: string; lon: string }>;
     if (!data.length) {
       cacheSet(trimmed, null);
@@ -95,11 +121,10 @@ export async function searchAddressSuggestions(
     : `${trimmed}, Jamshedpur, Jharkhand, India`;
 
   try {
-    const res = await fetch(
+    const res = await fetchWithRetry(
       `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=${limit}&q=${encodeURIComponent(q)}`,
-      { headers: { Accept: "application/json" } },
     );
-    if (!res.ok) return [];
+    if (!res || !res.ok) return [];
     const data = (await res.json()) as Array<{
       lat: string;
       lon: string;
