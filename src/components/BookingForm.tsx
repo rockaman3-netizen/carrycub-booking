@@ -69,10 +69,16 @@ const EMPTY: BookingInput = {
   notes: "",
 };
 
-// Value text inside a field card: no underline, darker/bolder than a normal
-// placeholder so filled-in addresses and details stand out clearly.
+// The card each field row sits in: white, soft shadow, no flat/thin look.
+const cardClass =
+  "flex items-center gap-3 rounded-2xl bg-white px-4 py-3.5 shadow-[0_1px_3px_rgba(0,0,0,0.07),0_1px_2px_rgba(0,0,0,0.04)]";
+
+// Label above each value: bold and dark.
+const labelClass = "block text-[13px] font-semibold text-navy";
+
+// The value text inside a field: lighter/muted, no underline.
 const underline =
-  "w-full min-w-0 border-0 bg-transparent p-0 text-[15px] font-semibold text-navy outline-none placeholder:font-normal placeholder:text-gray-400";
+  "w-full min-w-0 border-0 bg-transparent p-0 text-[15px] font-normal text-gray-500 outline-none placeholder:font-normal placeholder:text-gray-400";
 
 function Err({ text }: { text?: string }) {
   return text ? <span className="mt-1 block text-sm text-red-600">{text}</span> : null;
@@ -82,8 +88,8 @@ function ChevronIcon() {
   return (
     <svg
       viewBox="0 0 24 24"
-      width="18"
-      height="18"
+      width="16"
+      height="16"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
@@ -393,108 +399,77 @@ export default function BookingForm() {
         {/* ───────── Step 1: Location ───────── */}
         {step === 1 && (
         <>
-        <div className="space-y-3">
+        <div className="flex flex-col gap-2.5">
           {/* Pickup */}
-          <div className="rounded-2xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
-            <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand">
-                <svg
-                  viewBox="0 0 24 24"
-                  width="18"
-                  height="18"
-                  fill="none"
-                  stroke="white"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden
-                >
-                  <path d="M12 19V5M5 12l7-7 7 7" />
-                </svg>
-              </span>
-              <div className="min-w-0 flex-1">
-                <span className="block text-[13px] font-semibold text-gray-700">Pickup location</span>
-                <AddressField
-                  value={values.pickup}
-                  onChange={(text) => set("pickup", text)}
-                  onSelectSuggestion={(s) => {
-                    set("pickup", shortenAddress(s.label));
-                    setMapPickup({ lat: s.lat, lng: s.lng });
-                  }}
-                  placeholder="Search address or use GPS"
-                  error={errors.pickup}
-                  rightSlot={
-                    <button
-                      type="button"
-                      onClick={useCurrentLocation}
-                      aria-label="Use current location"
-                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-100 text-base active:bg-gray-200"
-                    >
-                      {gpsLoading ? (
-                        "…"
-                      ) : (
-                        <svg
-                          viewBox="0 0 24 24"
-                          width="20"
-                          height="20"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          aria-hidden
-                        >
-                          <circle cx="12" cy="12" r="7" />
-                          <circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none" />
-                          <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
-                        </svg>
-                      )}
-                    </button>
-                  }
-                />
-              </div>
+          <div className={cardClass}>
+            <span className="h-[11px] w-[11px] shrink-0 rounded-full bg-brand" />
+            <div className="min-w-0 flex-1">
+              <span className={labelClass}>Pickup location</span>
+              <AddressField
+                value={values.pickup}
+                onChange={(text) => set("pickup", text)}
+                onSelectSuggestion={(s) => {
+                  set("pickup", shortenAddress(s.label));
+                  setMapPickup({ lat: s.lat, lng: s.lng });
+                }}
+                placeholder="Search address or use GPS"
+                error={errors.pickup}
+                rightSlot={
+                  <button
+                    type="button"
+                    onClick={useCurrentLocation}
+                    aria-label="Use current location"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-base active:bg-gray-200"
+                  >
+                    {gpsLoading ? (
+                      "…"
+                    ) : (
+                      <svg
+                        viewBox="0 0 24 24"
+                        width="18"
+                        height="18"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        aria-hidden
+                      >
+                        <circle cx="12" cy="12" r="7" />
+                        <circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none" />
+                        <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+                      </svg>
+                    )}
+                  </button>
+                }
+              />
             </div>
           </div>
-          {gpsError && (
-            <p className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
-              {gpsError}
-            </p>
-          )}
 
           {/* Drop */}
-          <div className="rounded-2xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
-            <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-navy">
-                <svg
-                  viewBox="0 0 24 24"
-                  width="18"
-                  height="18"
-                  fill="none"
-                  stroke="white"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden
-                >
-                  <path d="M12 5v14M19 12l-7 7-7-7" />
-                </svg>
-              </span>
-              <div className="min-w-0 flex-1">
-                <span className="block text-[13px] font-semibold text-gray-700">Drop location</span>
-                <AddressField
-                  value={values.drop}
-                  onChange={(text) => set("drop", text)}
-                  onSelectSuggestion={(s) => {
-                    set("drop", shortenAddress(s.label));
-                    setMapDrop({ lat: s.lat, lng: s.lng });
-                  }}
-                  placeholder="Enter drop location"
-                  error={errors.drop}
-                />
-              </div>
-              <ChevronIcon />
+          <div className={cardClass}>
+            <span className="h-[11px] w-[11px] shrink-0 rounded-full bg-navy" />
+            <div className="min-w-0 flex-1">
+              <span className={labelClass}>Drop location</span>
+              <AddressField
+                value={values.drop}
+                onChange={(text) => set("drop", text)}
+                onSelectSuggestion={(s) => {
+                  set("drop", shortenAddress(s.label));
+                  setMapDrop({ lat: s.lat, lng: s.lng });
+                }}
+                placeholder="Enter drop location"
+                error={errors.drop}
+              />
             </div>
+            <ChevronIcon />
           </div>
         </div>
+
+        {gpsError && (
+          <p className="mt-3 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
+            {gpsError}
+          </p>
+        )}
 
         <p className="mt-4 text-xs text-gray-400">
           Currently serving Jamshedpur &amp; Adityapur only
@@ -576,94 +551,62 @@ export default function BookingForm() {
 
         {/* ───────── Step 3: Customer details ───────── */}
         {step === 3 && (
-        <div className="space-y-3 pb-6">
+        <div className="flex flex-col gap-2.5 pb-6">
           {/* Name */}
-          <div className="rounded-2xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
-            <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-navy">
-                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden>
-                  <circle cx="12" cy="8" r="3.4" fill="white" />
-                  <path
-                    d="M5 19c0-3.6 3.1-5.6 7-5.6s7 2 7 5.6"
-                    stroke="white"
-                    strokeWidth="2"
-                    fill="none"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </span>
-              <div className="min-w-0 flex-1">
-                <span className="block text-[13px] font-semibold text-gray-700">Your name</span>
-                <input
-                  className={underline}
-                  placeholder="Full name"
-                  value={values.name}
-                  onChange={(e) => set("name", e.target.value)}
-                  autoComplete="name"
-                  maxLength={60}
-                />
-              </div>
-              <ChevronIcon />
+          <div className={cardClass}>
+            <div className="min-w-0 flex-1">
+              <span className={labelClass}>Your name</span>
+              <input
+                className={underline}
+                placeholder="Full name"
+                value={values.name}
+                onChange={(e) => set("name", e.target.value)}
+                autoComplete="name"
+                maxLength={60}
+              />
             </div>
-            <Err text={errors.name} />
+            <ChevronIcon />
           </div>
+          <Err text={errors.name} />
 
           {/* Mobile */}
-          <div className="rounded-2xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
-            <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand">
-                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden>
-                  <path
-                    d="M6.6 10.8c1.2 2.4 3.2 4.4 5.6 5.6l2-2c.3-.3.7-.4 1-.2 1 .4 2.1.6 3.2.6.6 0 1 .4 1 1v3c0 .6-.4 1-1 1C10.7 20.8 3.2 13.3 3.2 4.6c0-.6.4-1 1-1h3c.6 0 1 .4 1 1 0 1.1.2 2.2.6 3.2.1.3 0 .7-.2 1l-2 2z"
-                    fill="white"
-                  />
-                </svg>
-              </span>
-              <div className="min-w-0 flex-1">
-                <span className="block text-[13px] font-semibold text-gray-700">Mobile number</span>
-                <div className="flex items-center gap-2">
-                  <span className="shrink-0 text-[15px] font-semibold text-gray-700">+91</span>
-                  <input
-                    className={underline}
-                    type="tel"
-                    inputMode="numeric"
-                    maxLength={10}
-                    placeholder="10-digit number"
-                    value={values.mobile}
-                    onChange={(e) => set("mobile", e.target.value.replace(/\D/g, ""))}
-                    autoComplete="tel-national"
-                  />
-                </div>
-              </div>
-              <ChevronIcon />
-            </div>
-            <Err text={errors.mobile} />
-          </div>
-
-          {/* Notes */}
-          <div className="rounded-2xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
-            <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-400">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden>
-                  <rect x="5" y="4" width="14" height="16" rx="2" stroke="white" strokeWidth="1.6" />
-                  <path d="M8 9h8M8 13h8M8 17h5" stroke="white" strokeWidth="1.6" strokeLinecap="round" />
-                </svg>
-              </span>
-              <div className="min-w-0 flex-1">
-                <span className="block text-[13px] font-semibold text-gray-700">Notes (optional)</span>
-                <textarea
+          <div className={cardClass}>
+            <div className="min-w-0 flex-1">
+              <span className={labelClass}>Mobile number</span>
+              <div className="flex items-center gap-2">
+                <span className="shrink-0 text-[15px] font-normal text-gray-500">+91</span>
+                <input
                   className={underline}
-                  rows={2}
-                  placeholder="Floor, lift, items, landmark..."
-                  value={values.notes}
-                  onChange={(e) => set("notes", e.target.value)}
-                  maxLength={300}
+                  type="tel"
+                  inputMode="numeric"
+                  maxLength={10}
+                  placeholder="10-digit number"
+                  value={values.mobile}
+                  onChange={(e) => set("mobile", e.target.value.replace(/\D/g, ""))}
+                  autoComplete="tel-national"
                 />
               </div>
-              <ChevronIcon />
             </div>
-            <Err text={errors.notes} />
+            <ChevronIcon />
           </div>
+          <Err text={errors.mobile} />
+
+          {/* Notes */}
+          <div className={cardClass}>
+            <div className="min-w-0 flex-1">
+              <span className={labelClass}>Notes (optional)</span>
+              <textarea
+                className={underline}
+                rows={1}
+                placeholder="Floor, lift, items, landmark..."
+                value={values.notes}
+                onChange={(e) => set("notes", e.target.value)}
+                maxLength={300}
+              />
+            </div>
+            <ChevronIcon />
+          </div>
+          <Err text={errors.notes} />
         </div>
         )}
       </div>
