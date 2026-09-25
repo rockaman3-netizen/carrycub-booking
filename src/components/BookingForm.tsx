@@ -36,6 +36,20 @@ async function resolvePickupLoc(text: string) {
   return parseCurrentLocationString(text) ?? (await geocodeAddress(text));
 }
 
+// Nominatim's display_name is very long (e.g. "Road, Locality, City,
+// District, State, PIN, Country"). Keep only the first few comma-separated
+// parts so the field stays short and readable, and fits the form's
+// validation length — the exact coordinates are captured separately
+// regardless of how much of the label we keep.
+function shortenAddress(label: string, parts = 3): string {
+  return label
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .slice(0, parts)
+    .join(", ");
+}
+
 // Demo-only ETA shown next to each vehicle in the list, purely cosmetic
 // (like Porter/Ola's "20 mins"). Not derived from any real dispatch data.
 const DUMMY_ETA_MINS: Record<string, number> = {
@@ -366,7 +380,7 @@ export default function BookingForm() {
             value={values.pickup}
             onChange={(text) => set("pickup", text)}
             onSelectSuggestion={(s) => {
-              set("pickup", s.label);
+              set("pickup", shortenAddress(s.label));
               setMapPickup({ lat: s.lat, lng: s.lng });
             }}
             placeholder="Search address or use GPS"
@@ -414,7 +428,7 @@ export default function BookingForm() {
             value={values.drop}
             onChange={(text) => set("drop", text)}
             onSelectSuggestion={(s) => {
-              set("drop", s.label);
+              set("drop", shortenAddress(s.label));
               setMapDrop({ lat: s.lat, lng: s.lng });
             }}
             placeholder="Enter drop location"
