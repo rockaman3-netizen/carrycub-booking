@@ -3,8 +3,6 @@ import { NextResponse } from "next/server";
 import { saveDeviceToken, type DeviceTokenRole } from "@/lib/sheets";
 import { sendPushToTokens } from "@/lib/push";
 
-export const runtime = "edge";
-
 const VALID_ROLES: DeviceTokenRole[] = ["admin", "driver", "customer"];
 
 export async function POST(req: Request) {
