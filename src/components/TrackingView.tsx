@@ -116,6 +116,13 @@ export default function TrackingView({ id }: { id: string }) {
           </p>
           <p className="mt-4 text-xs tracking-wider text-gray-400">{booking.id}</p>
 
+          {booking.estimatedFare != null && (
+            <p className="mt-3 text-lg font-bold text-navy">
+              ₹{booking.estimatedFare}
+              <span className="ml-1.5 text-xs font-normal text-gray-400">Total Fare</span>
+            </p>
+          )}
+
           {driver?.name && (
             <div className="mt-8 flex items-center gap-3">
               <span className="flex h-11 w-11 items-center justify-center rounded-full bg-gray-100 text-xl">
