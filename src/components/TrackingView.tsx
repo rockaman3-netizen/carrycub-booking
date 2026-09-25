@@ -23,8 +23,6 @@ const TrackingMap = dynamic(() => import("@/components/TrackingMap"), {
   loading: () => <div className="map-placeholder h-full w-full animate-pulse" />,
 });
 
-// Shown when the customer taps "Cancel booking" — pick a reason first,
-// keeps the flow deliberate instead of a single accidental tap.
 const CANCEL_REASONS = [
   "Booked by mistake",
   "Price too high",
@@ -32,6 +30,115 @@ const CANCEL_REASONS = [
   "Plan changed",
   "Other",
 ];
+
+// Full-screen overlay bottom-sheet — fixed to the viewport, always slides
+// up from the bottom the instant "Cancel booking" is tapped, regardless of
+// how far the customer has scrolled the page underneath it.
+function CancelSheet({
+  open,
+  reason,
+  setReason,
+  otherReason,
+  setOtherReason,
+  cancelling,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean;
+  reason: string | null;
+  setReason: (r: string) => void;
+  otherReason: string;
+  setOtherReason: (v: string) => void;
+  cancelling: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      const frame = requestAnimationFrame(() => setVisible(true));
+      return () => cancelAnimationFrame(frame);
+    }
+    setVisible(false);
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[999] flex items-end justify-center bg-black/40 transition-opacity duration-200"
+      style={{ opacity: visible ? 1 : 0 }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-t-3xl bg-white p-5 pb-[max(env(safe-area-inset-bottom),1.25rem)] shadow-[0_-8px_30px_rgba(0,0,0,0.25)] transition-transform duration-300 ease-out"
+        style={{ transform: visible ? "translateY(0)" : "translateY(100%)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-gray-200" />
+        <p className="text-base font-semibold text-gray-900">Why are you cancelling?</p>
+
+        <div className="mt-3 flex flex-col gap-2">
+          {CANCEL_REASONS.map((r) => {
+            const selected = reason === r;
+            return (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setReason(r)}
+                className={`flex items-center justify-between rounded-xl border px-3.5 py-3 text-left text-sm transition ${
+                  selected
+                    ? "border-gray-800 bg-gray-50 font-medium text-gray-900"
+                    : "border-gray-200 text-gray-600 active:bg-gray-50"
+                }`}
+              >
+                {r}
+                <span
+                  className={`h-4 w-4 shrink-0 rounded-full border-2 ${
+                    selected
+                      ? "border-gray-800 bg-gray-800 ring-2 ring-inset ring-white"
+                      : "border-gray-300"
+                  }`}
+                />
+              </button>
+            );
+          })}
+        </div>
+
+        {reason === "Other" && (
+          <textarea
+            value={otherReason}
+            onChange={(e) => setOtherReason(e.target.value)}
+            placeholder="Tell us a bit more…"
+            rows={2}
+            maxLength={200}
+            className="mt-3 w-full rounded-xl border border-gray-200 px-3.5 py-2.5 text-sm text-gray-700 outline-none placeholder:text-gray-400"
+          />
+        )}
+
+        <div className="mt-4 flex gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={cancelling}
+            className="flex-1 rounded-xl bg-gray-100 py-3 text-sm font-medium text-gray-700 disabled:opacity-60"
+          >
+            Keep booking
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={cancelling || !reason || (reason === "Other" && !otherReason.trim())}
+            className="flex-1 rounded-xl bg-gray-900 py-3 text-sm font-medium text-white disabled:opacity-40"
+          >
+            {cancelling ? "Cancelling…" : "Confirm Cancel"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function TrackingView({ id }: { id: string }) {
   // undefined = still loading, null = not found
@@ -49,12 +156,9 @@ export default function TrackingView({ id }: { id: string }) {
     rememberRecentBookingId(id);
   }, [id]);
 
-  // Polls so the driver's live GPS and status changes show up without a refresh.
   usePolling(
     async () => {
       const b = await getBooking(id);
-      // A failed poll comes back as null. Once loaded, keep showing the
-      // booking instead of flipping to "not found".
       setBooking((prev) => b ?? (prev ? prev : null));
     },
     [id],
@@ -97,7 +201,6 @@ export default function TrackingView({ id }: { id: string }) {
   const isDelivered = status === "delivered";
   const isSearching = status === "searching";
   const driverAssigned = !isCancelled && flowIndex >= 1;
-  // Driver name/phone/vehicle are stored on the booking row at assign time.
   const driver = booking.driverId
     ? {
         name: booking.driverName,
@@ -287,7 +390,6 @@ export default function TrackingView({ id }: { id: string }) {
                   </span>
                 )}
               </div>
-              {/* Number is never printed — only used as the tel:/wa.me target. */}
               {driver?.phone && (
                 <div className="mt-2.5 flex gap-2">
                   <CallButton phone={driver.phone} label="Call Driver" />
@@ -418,82 +520,16 @@ export default function TrackingView({ id }: { id: string }) {
                 )}
               </div>
 
-              {/* Cancel (customer) */}
+              {/* Cancel (customer) — opens the fixed full-screen sheet */}
               {canCancel(status) && (
                 <div className="mt-4">
-                  {!cancelOpen ? (
-                    <button
-                      type="button"
-                      onClick={() => setCancelOpen(true)}
-                      className="w-full rounded-2xl border border-gray-200 py-3 text-sm font-medium text-gray-600 active:bg-gray-50"
-                    >
-                      Cancel booking
-                    </button>
-                  ) : (
-                    <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-[0_2px_10px_rgba(0,0,0,0.06)]">
-                      <p className="text-sm font-semibold text-gray-800">Why are you cancelling?</p>
-                      <div className="mt-3 flex flex-col gap-2">
-                        {CANCEL_REASONS.map((reason) => {
-                          const selected = cancelReason === reason;
-                          return (
-                            <button
-                              key={reason}
-                              type="button"
-                              onClick={() => setCancelReason(reason)}
-                              className={`flex items-center justify-between rounded-xl border px-3.5 py-2.5 text-left text-sm transition ${
-                                selected
-                                  ? "border-gray-800 bg-gray-50 font-medium text-gray-900"
-                                  : "border-gray-200 text-gray-600 active:bg-gray-50"
-                              }`}
-                            >
-                              {reason}
-                              <span
-                                className={`h-4 w-4 shrink-0 rounded-full border-2 ${
-                                  selected
-                                    ? "border-gray-800 bg-gray-800 ring-2 ring-inset ring-white"
-                                    : "border-gray-300"
-                                }`}
-                              />
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {cancelReason === "Other" && (
-                        <textarea
-                          value={otherReason}
-                          onChange={(e) => setOtherReason(e.target.value)}
-                          placeholder="Tell us a bit more…"
-                          rows={2}
-                          maxLength={200}
-                          className="mt-3 w-full rounded-xl border border-gray-200 px-3.5 py-2.5 text-sm text-gray-700 outline-none placeholder:text-gray-400"
-                        />
-                      )}
-
-                      <div className="mt-4 flex gap-3">
-                        <button
-                          type="button"
-                          onClick={closeCancelSheet}
-                          disabled={cancelling}
-                          className="flex-1 rounded-xl bg-gray-100 py-2.5 text-sm font-medium text-gray-700 disabled:opacity-60"
-                        >
-                          Keep booking
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleCancel}
-                          disabled={
-                            cancelling ||
-                            !cancelReason ||
-                            (cancelReason === "Other" && !otherReason.trim())
-                          }
-                          className="flex-1 rounded-xl bg-gray-900 py-2.5 text-sm font-medium text-white disabled:opacity-40"
-                        >
-                          {cancelling ? "Cancelling…" : "Confirm Cancel"}
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setCancelOpen(true)}
+                    className="w-full rounded-2xl border border-gray-200 py-3 text-sm font-medium text-gray-600 active:bg-gray-50"
+                  >
+                    Cancel booking
+                  </button>
                 </div>
               )}
             </div>
@@ -509,6 +545,17 @@ export default function TrackingView({ id }: { id: string }) {
           )}
         </div>
       </div>
+
+      <CancelSheet
+        open={cancelOpen}
+        reason={cancelReason}
+        setReason={setCancelReason}
+        otherReason={otherReason}
+        setOtherReason={setOtherReason}
+        cancelling={cancelling}
+        onClose={closeCancelSheet}
+        onConfirm={handleCancel}
+      />
     </main>
   );
 }
