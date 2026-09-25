@@ -23,10 +23,23 @@ const TrackingMap = dynamic(() => import("@/components/TrackingMap"), {
   loading: () => <div className="map-placeholder h-full w-full animate-pulse" />,
 });
 
+// Shown when the customer taps "Cancel booking" — pick a reason first,
+// keeps the flow deliberate instead of a single accidental tap.
+const CANCEL_REASONS = [
+  "Booked by mistake",
+  "Price too high",
+  "Taking too long",
+  "Plan changed",
+  "Other",
+];
+
 export default function TrackingView({ id }: { id: string }) {
   // undefined = still loading, null = not found
   const [booking, setBooking] = useState<StoredBooking | null | undefined>(undefined);
-  const [confirmCancel, setConfirmCancel] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState<string | null>(null);
+  const [otherReason, setOtherReason] = useState("");
+  const [cancelling, setCancelling] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [rating, setRating] = useState(0);
   const [hoverRating, setHoverRating] = useState(0);
@@ -97,9 +110,18 @@ export default function TrackingView({ id }: { id: string }) {
   const location = booking.driverLocation;
   const isTripLive = !isCancelled && !isDelivered;
 
+  function closeCancelSheet() {
+    setCancelOpen(false);
+    setCancelReason(null);
+    setOtherReason("");
+  }
+
   async function handleCancel() {
+    setCancelling(true);
     const updated = await cancelBooking(booking!.id);
     if (updated) setBooking(updated);
+    setCancelling(false);
+    closeCancelSheet();
   }
 
   // ---------- Dedicated full-screen "Delivered" experience ----------
@@ -399,34 +421,75 @@ export default function TrackingView({ id }: { id: string }) {
               {/* Cancel (customer) */}
               {canCancel(status) && (
                 <div className="mt-4">
-                  {!confirmCancel ? (
+                  {!cancelOpen ? (
                     <button
                       type="button"
-                      onClick={() => setConfirmCancel(true)}
-                      className="w-full rounded-2xl border border-red-200 py-3 text-sm font-medium text-red-600 active:bg-red-50"
+                      onClick={() => setCancelOpen(true)}
+                      className="w-full rounded-2xl border border-gray-200 py-3 text-sm font-medium text-gray-600 active:bg-gray-50"
                     >
                       Cancel booking
                     </button>
                   ) : (
-                    <div className="rounded-2xl bg-red-50 p-4 text-center">
-                      <p className="text-sm text-red-700">Cancel this booking?</p>
-                      <div className="mt-3 flex gap-3">
+                    <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-[0_2px_10px_rgba(0,0,0,0.06)]">
+                      <p className="text-sm font-semibold text-gray-800">Why are you cancelling?</p>
+                      <div className="mt-3 flex flex-col gap-2">
+                        {CANCEL_REASONS.map((reason) => {
+                          const selected = cancelReason === reason;
+                          return (
+                            <button
+                              key={reason}
+                              type="button"
+                              onClick={() => setCancelReason(reason)}
+                              className={`flex items-center justify-between rounded-xl border px-3.5 py-2.5 text-left text-sm transition ${
+                                selected
+                                  ? "border-gray-800 bg-gray-50 font-medium text-gray-900"
+                                  : "border-gray-200 text-gray-600 active:bg-gray-50"
+                              }`}
+                            >
+                              {reason}
+                              <span
+                                className={`h-4 w-4 shrink-0 rounded-full border-2 ${
+                                  selected
+                                    ? "border-gray-800 bg-gray-800 ring-2 ring-inset ring-white"
+                                    : "border-gray-300"
+                                }`}
+                              />
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {cancelReason === "Other" && (
+                        <textarea
+                          value={otherReason}
+                          onChange={(e) => setOtherReason(e.target.value)}
+                          placeholder="Tell us a bit more…"
+                          rows={2}
+                          maxLength={200}
+                          className="mt-3 w-full rounded-xl border border-gray-200 px-3.5 py-2.5 text-sm text-gray-700 outline-none placeholder:text-gray-400"
+                        />
+                      )}
+
+                      <div className="mt-4 flex gap-3">
                         <button
                           type="button"
-                          onClick={() => setConfirmCancel(false)}
-                          className="flex-1 rounded-xl bg-white py-2.5 text-sm font-medium text-gray-700"
+                          onClick={closeCancelSheet}
+                          disabled={cancelling}
+                          className="flex-1 rounded-xl bg-gray-100 py-2.5 text-sm font-medium text-gray-700 disabled:opacity-60"
                         >
                           Keep booking
                         </button>
                         <button
                           type="button"
-                          onClick={() => {
-                            handleCancel();
-                            setConfirmCancel(false);
-                          }}
-                          className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-medium text-white"
+                          onClick={handleCancel}
+                          disabled={
+                            cancelling ||
+                            !cancelReason ||
+                            (cancelReason === "Other" && !otherReason.trim())
+                          }
+                          className="flex-1 rounded-xl bg-gray-900 py-2.5 text-sm font-medium text-white disabled:opacity-40"
                         >
-                          Yes, cancel
+                          {cancelling ? "Cancelling…" : "Confirm Cancel"}
                         </button>
                       </div>
                     </div>
