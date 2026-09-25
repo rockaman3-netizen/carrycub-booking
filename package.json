@@ -11,6 +11,10 @@
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy"
   },
   "dependencies": {
+    "@capacitor-community/background-geolocation": "^1.2.26",
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/cli": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
     "@opennextjs/cloudflare": "^1.3.0",
     "firebase": "^10.12.2",
     "jose": "^5.9.0",
