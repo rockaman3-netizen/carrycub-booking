@@ -24,7 +24,7 @@ jobs:
         run: cp capacitor.config.customer.ts capacitor.config.ts
 
       - name: Sync customer Android project
-        run: npx cap sync android --config capacitor.config.customer.ts
+        run: npx cap sync android
 
       - name: Build APK
         run: cd android-customer && chmod +x gradlew && ./gradlew assembleDebug
