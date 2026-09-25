@@ -109,6 +109,22 @@ function ChevronIcon() {
   );
 }
 
+// Small pulsing dot for the pickup/drop markers — gives a "live GPS" feel.
+// `color` sets the solid center dot; the ping ring behind it always uses a
+// lighter shade of the same hue via Tailwind's opacity utility.
+function BlinkDot({ color }: { color: "green" | "navy" }) {
+  const dot = color === "green" ? "bg-green-500" : "bg-navy";
+  const ring = color === "green" ? "bg-green-400" : "bg-navy";
+  return (
+    <span className="relative flex h-[11px] w-[11px] shrink-0">
+      <span
+        className={`absolute inline-flex h-full w-full animate-ping rounded-full ${ring} opacity-75`}
+      />
+      <span className={`relative inline-flex h-[11px] w-[11px] rounded-full ${dot}`} />
+    </span>
+  );
+}
+
 // Which BookingInput keys belong to each step — used to validate only the
 // fields visible on that step, so the customer only ever sees errors for
 // what's in front of them.
@@ -291,6 +307,7 @@ export default function BookingForm() {
   }
 
   function goBack() {
+    setErrors({});
     setStep((s) => Math.max(1, s - 1));
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -377,7 +394,7 @@ export default function BookingForm() {
         <div className="flex flex-col gap-2.5">
           {/* Pickup */}
           <div className={locationCardClass}>
-            <span className="h-[11px] w-[11px] shrink-0 rounded-full bg-brand" />
+            <BlinkDot color="green" />
             <div className="min-w-0 flex-1">
               <span className={labelClass}>Pickup location</span>
               <AddressField
@@ -394,15 +411,15 @@ export default function BookingForm() {
                     type="button"
                     onClick={useCurrentLocation}
                     aria-label="Use current location"
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-base active:bg-gray-200"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-base active:bg-gray-200"
                   >
                     {gpsLoading ? (
                       "…"
                     ) : (
                       <svg
                         viewBox="0 0 24 24"
-                        width="18"
-                        height="18"
+                        width="16"
+                        height="16"
                         fill="none"
                         stroke="currentColor"
                         strokeWidth="2"
@@ -422,7 +439,7 @@ export default function BookingForm() {
 
           {/* Drop */}
           <div className={locationCardClass}>
-            <span className="h-[11px] w-[11px] shrink-0 rounded-full bg-navy" />
+            <BlinkDot color="navy" />
             <div className="min-w-0 flex-1">
               <span className={labelClass}>Drop location</span>
               <AddressField
@@ -446,7 +463,7 @@ export default function BookingForm() {
           </p>
         )}
 
-        <p className="mt-5 text-xs text-gray-400">
+        <p className="mt-5 text-center text-xs text-gray-400">
           Currently serving Jamshedpur &amp; Adityapur only
         </p>
 
