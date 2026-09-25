@@ -6,28 +6,38 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '20'
 
-      - uses: actions/setup-java@v4
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: 21
+          distribution: 'temurin'
+          java-version: '17'
 
-      - run: npm install
+      - name: Run npm install
+        run: npm install
 
       - name: Use customer config
         run: cp capacitor.config.customer.ts capacitor.config.ts
 
       - name: Sync customer Android project
-        run: npx cap sync android
+        run: |
+          mkdir -p android-customer/app/src/main/assets
+          npx cap sync android
 
       - name: Build APK
-        run: cd android-customer && chmod +x gradlew && ./gradlew assembleDebug
+        run: |
+          cd android-customer
+          chmod +x gradlew
+          ./gradlew assembleDebug
 
       - name: Upload Customer APK
         uses: actions/upload-artifact@v4
