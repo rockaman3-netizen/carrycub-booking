@@ -9,6 +9,7 @@ import { canCancel, getStatus, type StatusId } from "@/lib/status";
 import { getBooking, cancelBooking, type StoredBooking } from "@/lib/store";
 import { rememberRecentBookingId } from "@/lib/recent-bookings";
 import { usePolling } from "@/lib/poll";
+import { registerPushToken } from "@/lib/firebase-client";
 
 function CopyBookingId({ id }: { id: string }) {
   const [copied, setCopied] = useState(false);
@@ -91,6 +92,13 @@ export default function BookingConfirmation({ id }: { id: string }) {
 
   useEffect(() => {
     rememberRecentBookingId(id);
+  }, [id]);
+
+  // Ask for notification permission right on the confirmation screen, so
+  // this customer's device gets the "Booking Confirmed" push immediately,
+  // and future status updates too.
+  useEffect(() => {
+    registerPushToken({ role: "customer", bookingId: id });
   }, [id]);
 
   usePolling(
