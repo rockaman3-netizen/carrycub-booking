@@ -69,11 +69,32 @@ const EMPTY: BookingInput = {
   notes: "",
 };
 
+// Value text inside a field card: no underline, darker/bolder than a normal
+// placeholder so filled-in addresses and details stand out clearly.
 const underline =
-  "w-full min-w-0 border-0 border-b-2 border-gray-200 bg-transparent px-0 py-2 text-base outline-none placeholder:text-gray-400 focus:border-brand";
+  "w-full min-w-0 border-0 bg-transparent p-0 text-[15px] font-semibold text-navy outline-none placeholder:font-normal placeholder:text-gray-400";
 
 function Err({ text }: { text?: string }) {
   return text ? <span className="mt-1 block text-sm text-red-600">{text}</span> : null;
+}
+
+function ChevronIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="18"
+      height="18"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="shrink-0 text-gray-300"
+      aria-hidden
+    >
+      <path d="M9 6l6 6-6 6" />
+    </svg>
+  );
 }
 
 const STEPS = [1, 2, 3] as const;
@@ -372,68 +393,107 @@ export default function BookingForm() {
         {/* ───────── Step 1: Location ───────── */}
         {step === 1 && (
         <>
-        <div className="relative pl-7">
-          <span className="absolute left-0 top-1 h-3.5 w-3.5 rounded-full bg-brand" />
-          <span className="absolute left-[6px] top-6 -bottom-8 border-l-2 border-dashed border-gray-300" />
-          <span className="block text-[13px] font-medium text-gray-500">Pickup location</span>
-          <AddressField
-            value={values.pickup}
-            onChange={(text) => set("pickup", text)}
-            onSelectSuggestion={(s) => {
-              set("pickup", shortenAddress(s.label));
-              setMapPickup({ lat: s.lat, lng: s.lng });
-            }}
-            placeholder="Search address or use GPS"
-            error={errors.pickup}
-            rightSlot={
-              <button
-                type="button"
-                onClick={useCurrentLocation}
-                aria-label="Use current location"
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-100 text-base active:bg-gray-200"
-              >
-                {gpsLoading ? (
-                  "…"
-                ) : (
-                  <svg
-                    viewBox="0 0 24 24"
-                    width="20"
-                    height="20"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    aria-hidden
-                  >
-                    <circle cx="12" cy="12" r="7" />
-                    <circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none" />
-                    <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
-                  </svg>
-                )}
-              </button>
-            }
-          />
+        <div className="space-y-3">
+          {/* Pickup */}
+          <div className="rounded-2xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand">
+                <svg
+                  viewBox="0 0 24 24"
+                  width="18"
+                  height="18"
+                  fill="none"
+                  stroke="white"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
+                  <path d="M12 19V5M5 12l7-7 7 7" />
+                </svg>
+              </span>
+              <div className="min-w-0 flex-1">
+                <span className="block text-[13px] font-semibold text-gray-700">Pickup location</span>
+                <AddressField
+                  value={values.pickup}
+                  onChange={(text) => set("pickup", text)}
+                  onSelectSuggestion={(s) => {
+                    set("pickup", shortenAddress(s.label));
+                    setMapPickup({ lat: s.lat, lng: s.lng });
+                  }}
+                  placeholder="Search address or use GPS"
+                  error={errors.pickup}
+                  rightSlot={
+                    <button
+                      type="button"
+                      onClick={useCurrentLocation}
+                      aria-label="Use current location"
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-100 text-base active:bg-gray-200"
+                    >
+                      {gpsLoading ? (
+                        "…"
+                      ) : (
+                        <svg
+                          viewBox="0 0 24 24"
+                          width="20"
+                          height="20"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          aria-hidden
+                        >
+                          <circle cx="12" cy="12" r="7" />
+                          <circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none" />
+                          <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+                        </svg>
+                      )}
+                    </button>
+                  }
+                />
+              </div>
+            </div>
+          </div>
           {gpsError && (
-            <p className="mt-3 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
+            <p className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
               {gpsError}
             </p>
           )}
-        </div>
 
-        {/* Drop */}
-        <div className="relative mt-5 pl-7">
-          <span className="absolute left-0 top-1 h-3.5 w-3.5 rounded-full bg-navy" />
-          <span className="block text-[13px] font-medium text-gray-500">Drop location</span>
-          <AddressField
-            value={values.drop}
-            onChange={(text) => set("drop", text)}
-            onSelectSuggestion={(s) => {
-              set("drop", shortenAddress(s.label));
-              setMapDrop({ lat: s.lat, lng: s.lng });
-            }}
-            placeholder="Enter drop location"
-            error={errors.drop}
-          />
+          {/* Drop */}
+          <div className="rounded-2xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-navy">
+                <svg
+                  viewBox="0 0 24 24"
+                  width="18"
+                  height="18"
+                  fill="none"
+                  stroke="white"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
+                  <path d="M12 5v14M19 12l-7 7-7-7" />
+                </svg>
+              </span>
+              <div className="min-w-0 flex-1">
+                <span className="block text-[13px] font-semibold text-gray-700">Drop location</span>
+                <AddressField
+                  value={values.drop}
+                  onChange={(text) => set("drop", text)}
+                  onSelectSuggestion={(s) => {
+                    set("drop", shortenAddress(s.label));
+                    setMapDrop({ lat: s.lat, lng: s.lng });
+                  }}
+                  placeholder="Enter drop location"
+                  error={errors.drop}
+                />
+              </div>
+              <ChevronIcon />
+            </div>
+          </div>
         </div>
 
         <p className="mt-4 text-xs text-gray-400">
@@ -516,85 +576,5 @@ export default function BookingForm() {
 
         {/* ───────── Step 3: Customer details ───────── */}
         {step === 3 && (
-        <div className="space-y-4 pb-6">
-          <div>
-            <span className="block text-[13px] font-semibold text-gray-700">Your name</span>
-            <input
-              className={`${underline} font-medium text-navy`}
-              placeholder="Full name"
-              value={values.name}
-              onChange={(e) => set("name", e.target.value)}
-              autoComplete="name"
-              maxLength={60}
-            />
-            <Err text={errors.name} />
-          </div>
-
-          <div>
-            <span className="block text-[13px] font-semibold text-gray-700">Mobile number</span>
-            <div className="flex items-center gap-2">
-              <span className="shrink-0 border-b-2 border-gray-200 py-2 text-base font-medium text-gray-700">+91</span>
-              <input
-                className={`${underline} font-medium text-navy`}
-                type="tel"
-                inputMode="numeric"
-                maxLength={10}
-                placeholder="10-digit number"
-                value={values.mobile}
-                onChange={(e) => set("mobile", e.target.value.replace(/\D/g, ""))}
-                autoComplete="tel-national"
-              />
-            </div>
-            <Err text={errors.mobile} />
-          </div>
-
-          <div>
-            <span className="block text-[13px] font-semibold text-gray-700">Notes (optional)</span>
-            <textarea
-              className={`${underline} font-medium text-navy`}
-              rows={2}
-              placeholder="Floor, lift, items, landmark..."
-              value={values.notes}
-              onChange={(e) => set("notes", e.target.value)}
-              maxLength={300}
-            />
-            <Err text={errors.notes} />
-          </div>
-        </div>
-        )}
-      </div>
-
-      <div className="sticky bottom-0 rounded-b-none border-t border-gray-100 bg-white px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        {submitError && <p className="mb-3 text-sm text-red-600">{submitError}</p>}
-        <div className="flex gap-3">
-          {step > 1 && (
-            <button
-              type="button"
-              onClick={goBack}
-              className="shrink-0 rounded-2xl border border-gray-200 bg-white px-5 py-3.5 text-base font-semibold text-navy active:bg-gray-50"
-            >
-              Back
-            </button>
-          )}
-          {step < 3 ? (
-            <button
-              type="button"
-              onClick={goNext}
-              className="w-full rounded-2xl bg-brand py-3.5 text-base font-semibold text-white active:bg-brand-dark"
-            >
-              Next
-            </button>
-          ) : (
-            <button
-              type="submit"
-              disabled={submitting}
-              className="w-full rounded-2xl bg-brand py-3.5 text-base font-semibold text-white active:bg-brand-dark disabled:opacity-60"
-            >
-              {submitting ? "Locating addresses…" : "Book Now"}
-            </button>
-          )}
-        </div>
-      </div>
-    </form>
-  );
-}
+        <div className="space-y-3 pb-6">
+          {/* Name */}
