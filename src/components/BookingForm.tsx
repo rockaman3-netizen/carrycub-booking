@@ -1,13 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { saveBooking } from "@/lib/store";
 import { rememberRecentBookingId } from "@/lib/recent-bookings";
 import { VEHICLES } from "@/lib/vehicles";
-import { geocodeAddress, parseCurrentLocationString, type LatLng } from "@/lib/geocode";
+import {
+  geocodeAddress,
+  parseCurrentLocationString,
+  searchAddressSuggestions,
+  type LatLng,
+  type AddressSuggestion,
+} from "@/lib/geocode";
 import { estimateFare, type FareEstimate } from "@/lib/fare";
 import {
   generateBookingId,
@@ -91,6 +97,107 @@ function StepHeader({ step }: { step: number }) {
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+// Shared autocomplete dropdown for the pickup/drop fields. Debounces the
+// query, shows up to 5 real OSM suggestions, and lets the customer tap one
+// to fill the field with its exact coordinates (skipping a second geocode
+// lookup for that address later).
+function AddressField({
+  value,
+  onChange,
+  onSelectSuggestion,
+  placeholder,
+  error,
+  rightSlot,
+}: {
+  value: string;
+  onChange: (text: string) => void;
+  onSelectSuggestion: (s: AddressSuggestion) => void;
+  placeholder: string;
+  error?: string;
+  rightSlot?: React.ReactNode;
+}) {
+  const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const text = value.trim();
+    // Don't show suggestions for the special GPS string.
+    if (text.length < 3 || parseCurrentLocationString(text)) {
+      setSuggestions([]);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    const t = setTimeout(async () => {
+      const results = await searchAddressSuggestions(text);
+      if (!cancelled) {
+        setSuggestions(results);
+        setLoading(false);
+      }
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [value]);
+
+  // Close the dropdown on outside tap.
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  const showDropdown = open && value.trim().length >= 3 && (loading || suggestions.length > 0);
+
+  return (
+    <div ref={boxRef} className="relative">
+      <div className="flex items-center gap-3">
+        <input
+          className={underline}
+          placeholder={placeholder}
+          value={value}
+          onChange={(e) => {
+            onChange(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          autoComplete="off"
+          maxLength={120}
+        />
+        {rightSlot}
+      </div>
+      <Err text={error} />
+
+      {showDropdown && (
+        <div className="absolute inset-x-0 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-2xl border border-gray-200 bg-white py-1 shadow-lg">
+          {loading && suggestions.length === 0 && (
+            <p className="px-4 py-2.5 text-sm text-gray-400">Searching…</p>
+          )}
+          {suggestions.map((s, i) => (
+            <button
+              key={`${s.lat}-${s.lng}-${i}`}
+              type="button"
+              onClick={() => {
+                onSelectSuggestion(s);
+                setOpen(false);
+              }}
+              className="block w-full truncate px-4 py-2.5 text-left text-sm text-navy active:bg-gray-50"
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -289,42 +396,43 @@ export default function BookingForm() {
           <span className="absolute left-0 top-1 h-3.5 w-3.5 rounded-full bg-brand" />
           <span className="absolute left-[6px] top-6 -bottom-8 border-l-2 border-dashed border-gray-300" />
           <span className="block text-[13px] font-medium text-gray-500">Pickup location</span>
-          <div className="flex items-center gap-3">
-            <input
-              className={underline}
-              placeholder="Search address or use GPS"
-              value={values.pickup}
-              onChange={(e) => set("pickup", e.target.value)}
-              autoComplete="off"
-              maxLength={120}
-            />
-            <button
-              type="button"
-              onClick={useCurrentLocation}
-              aria-label="Use current location"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-100 text-base active:bg-gray-200"
-            >
-              {gpsLoading ? (
-                "…"
-              ) : (
-                <svg
-                  viewBox="0 0 24 24"
-                  width="20"
-                  height="20"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  aria-hidden
-                >
-                  <circle cx="12" cy="12" r="7" />
-                  <circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none" />
-                  <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
-                </svg>
-              )}
-            </button>
-          </div>
-          <Err text={errors.pickup} />
+          <AddressField
+            value={values.pickup}
+            onChange={(text) => set("pickup", text)}
+            onSelectSuggestion={(s) => {
+              set("pickup", s.label);
+              setMapPickup({ lat: s.lat, lng: s.lng });
+            }}
+            placeholder="Search address or use GPS"
+            error={errors.pickup}
+            rightSlot={
+              <button
+                type="button"
+                onClick={useCurrentLocation}
+                aria-label="Use current location"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-100 text-base active:bg-gray-200"
+              >
+                {gpsLoading ? (
+                  "…"
+                ) : (
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="20"
+                    height="20"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    aria-hidden
+                  >
+                    <circle cx="12" cy="12" r="7" />
+                    <circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none" />
+                    <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+                  </svg>
+                )}
+              </button>
+            }
+          />
           {gpsError && (
             <p className="mt-3 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
               {gpsError}
@@ -336,15 +444,16 @@ export default function BookingForm() {
         <div className="relative mt-5 pl-7">
           <span className="absolute left-0 top-1 h-3.5 w-3.5 rounded-full bg-navy" />
           <span className="block text-[13px] font-medium text-gray-500">Drop location</span>
-          <input
-            className={underline}
-            placeholder="Enter drop location"
+          <AddressField
             value={values.drop}
-            onChange={(e) => set("drop", e.target.value)}
-            autoComplete="off"
-            maxLength={120}
+            onChange={(text) => set("drop", text)}
+            onSelectSuggestion={(s) => {
+              set("drop", s.label);
+              setMapDrop({ lat: s.lat, lng: s.lng });
+            }}
+            placeholder="Enter drop location"
+            error={errors.drop}
           />
-          <Err text={errors.drop} />
         </div>
 
         <p className="mt-4 text-xs text-gray-400">
