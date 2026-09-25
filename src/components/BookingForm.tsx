@@ -9,10 +9,12 @@ import { rememberRecentBookingId } from "@/lib/recent-bookings";
 import { VEHICLES } from "@/lib/vehicles";
 import {
   geocodeAddress,
+  isWithinPickupServiceArea,
   parseCurrentLocationString,
   searchAddressSuggestions,
   type LatLng,
   type AddressSuggestion,
+  type GeoScope,
 } from "@/lib/geocode";
 import { estimateFare } from "@/lib/fare";
 import {
@@ -33,7 +35,7 @@ const TrackingMap = dynamic(() => import("@/components/TrackingMap"), {
 // embedded in the text — use those directly instead of re-geocoding.
 // Otherwise resolve the typed address against OpenStreetMap.
 async function resolvePickupLoc(text: string) {
-  return parseCurrentLocationString(text) ?? (await geocodeAddress(text));
+  return parseCurrentLocationString(text) ?? (await geocodeAddress(text, "pickup"));
 }
 
 // Nominatim's display_name is very long (e.g. "Road, Locality, City,
@@ -125,6 +127,38 @@ function BlinkDot({ color }: { color: "green" | "navy" }) {
   );
 }
 
+// Small, premium-feeling toast for "this location isn't serviceable yet" —
+// fixed to the top of the screen, dark navy pill, auto-dismisses itself.
+// Deliberately minimal so it never clashes with the page underneath it.
+function ServiceabilityToast({ message, visible }: { message: string; visible: boolean }) {
+  return (
+    <div
+      className={`pointer-events-none fixed inset-x-0 top-[max(1rem,env(safe-area-inset-top))] z-50 flex justify-center px-6 transition-all duration-300 ${
+        visible ? "translate-y-0 opacity-100" : "-translate-y-2 opacity-0"
+      }`}
+    >
+      <div className="flex max-w-sm items-center gap-2.5 rounded-2xl bg-navy px-4 py-3 shadow-[0_10px_30px_rgba(0,0,0,0.25)]">
+        <svg
+          viewBox="0 0 24 24"
+          width="18"
+          height="18"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="shrink-0 text-orange-300"
+          aria-hidden
+        >
+          <path d="M12 21s-7-6.2-7-11a7 7 0 1 1 14 0c0 4.8-7 11-7 11Z" />
+          <path d="M4 4l16 16" />
+        </svg>
+        <span className="text-[13px] font-medium leading-snug text-white">{message}</span>
+      </div>
+    </div>
+  );
+}
+
 // Which BookingInput keys belong to each step — used to validate only the
 // fields visible on that step, so the customer only ever sees errors for
 // what's in front of them.
@@ -145,6 +179,7 @@ function AddressField({
   placeholder,
   error,
   rightSlot,
+  scope,
 }: {
   value: string;
   onChange: (text: string) => void;
@@ -152,6 +187,7 @@ function AddressField({
   placeholder: string;
   error?: string;
   rightSlot?: React.ReactNode;
+  scope: GeoScope;
 }) {
   const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
   const [open, setOpen] = useState(false);
@@ -169,7 +205,7 @@ function AddressField({
     let cancelled = false;
     setLoading(true);
     const t = setTimeout(async () => {
-      const results = await searchAddressSuggestions(text);
+      const results = await searchAddressSuggestions(text, 5, scope);
       if (!cancelled) {
         setSuggestions(results);
         setLoading(false);
@@ -179,7 +215,7 @@ function AddressField({
       cancelled = true;
       clearTimeout(t);
     };
-  }, [value]);
+  }, [value, scope]);
 
   // Close the dropdown on outside tap.
   useEffect(() => {
@@ -246,6 +282,18 @@ export default function BookingForm() {
   const [submitError, setSubmitError] = useState("");
   const [mapPickup, setMapPickup] = useState<LatLng | null>(null);
   const [mapDrop, setMapDrop] = useState<LatLng | null>(null);
+  const [pickupUnserviceable, setPickupUnserviceable] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const showUnserviceableToast = () =>
+    setToast("We currently deliver only within Jamshedpur & Adityapur — this location isn't serviceable yet.");
+
+  // Auto-dismiss the toast.
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   // Step-1 map: plot pickup / drop as soon as each address resolves to real
   // coordinates (debounced; results are cached, so the per-vehicle fare
@@ -255,12 +303,22 @@ export default function BookingForm() {
     const text = values.pickup.trim();
     if (text.length < 3) {
       setMapPickup(null);
+      setPickupUnserviceable(false);
       return;
     }
     let cancelled = false;
     const t = setTimeout(async () => {
       const loc = await resolvePickupLoc(text);
-      if (!cancelled) setMapPickup(loc);
+      if (cancelled) return;
+      if (loc && !isWithinPickupServiceArea(loc)) {
+        // Resolved to a real place, just not one CarryCub serves yet.
+        setMapPickup(null);
+        setPickupUnserviceable(true);
+        showUnserviceableToast();
+        return;
+      }
+      setPickupUnserviceable(false);
+      setMapPickup(loc);
     }, 700);
     return () => {
       cancelled = true;
@@ -276,7 +334,7 @@ export default function BookingForm() {
     }
     let cancelled = false;
     const t = setTimeout(async () => {
-      const loc = await geocodeAddress(text);
+      const loc = await geocodeAddress(text, "drop");
       if (!cancelled) setMapDrop(loc);
     }, 700);
     return () => {
@@ -300,8 +358,17 @@ export default function BookingForm() {
     for (const key of relevant) {
       if (found[key]) stepErrors[key] = found[key];
     }
-    setErrors((e) => ({ ...e, ...stepErrors, ...Object.fromEntries(relevant.filter((k) => !stepErrors[k]).map((k) => [k, undefined])) }));
-    if (Object.keys(stepErrors).length > 0) return;
+    if (step === 1 && pickupUnserviceable) {
+      stepErrors.pickup = "This area isn't serviceable yet";
+      showUnserviceableToast();
+    }
+    if (Object.keys(stepErrors).length > 0) {
+      setErrors((e) => ({ ...e, ...stepErrors }));
+      return;
+    }
+    // Fresh start on the step we're entering — never carry over an error
+    // from an earlier Book Now attempt on a different step.
+    setErrors({});
     setStep((s) => Math.min(3, s + 1));
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -322,8 +389,12 @@ export default function BookingForm() {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const { latitude, longitude } = pos.coords;
-        set("pickup", `Current location (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`);
         setGpsLoading(false);
+        if (!isWithinPickupServiceArea({ lat: latitude, lng: longitude })) {
+          showUnserviceableToast();
+          return;
+        }
+        set("pickup", `Current location (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`);
       },
       () => {
         setGpsError("Location permission is off. You can still search your pickup address above.");
@@ -343,6 +414,10 @@ export default function BookingForm() {
       return;
     }
     const found = validateBooking(values);
+    if (pickupUnserviceable) {
+      found.pickup = "This area isn't serviceable yet";
+      showUnserviceableToast();
+    }
     setErrors(found);
     if (Object.keys(found).length > 0) return;
 
@@ -354,7 +429,7 @@ export default function BookingForm() {
     // device's own GPS fix, an OSM geocoding match, or null if neither works.
     const [pickupLoc, dropLoc] = await Promise.all([
       resolvePickupLoc(pickup),
-      geocodeAddress(drop),
+      geocodeAddress(drop, "drop"),
     ]);
 
     const finalFare =
@@ -387,6 +462,7 @@ export default function BookingForm() {
 
   return (
     <form onSubmit={handleSubmit} noValidate className="flex flex-1 flex-col">
+      <ServiceabilityToast message={toast ?? ""} visible={toast !== null} />
       <div className="flex-1 px-5 pt-5">
         {/* ───────── Step 1: Location ───────── */}
         {step === 1 && (
@@ -406,35 +482,34 @@ export default function BookingForm() {
                 }}
                 placeholder="Search address or use GPS"
                 error={errors.pickup}
-                rightSlot={
-                  <button
-                    type="button"
-                    onClick={useCurrentLocation}
-                    aria-label="Use current location"
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-base active:bg-gray-200"
-                  >
-                    {gpsLoading ? (
-                      "…"
-                    ) : (
-                      <svg
-                        viewBox="0 0 24 24"
-                        width="16"
-                        height="16"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        aria-hidden
-                      >
-                        <circle cx="12" cy="12" r="7" />
-                        <circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none" />
-                        <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
-                      </svg>
-                    )}
-                  </button>
-                }
+                scope="pickup"
               />
             </div>
+            <button
+              type="button"
+              onClick={useCurrentLocation}
+              aria-label="Use current location"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-base active:bg-gray-200"
+            >
+              {gpsLoading ? (
+                "…"
+              ) : (
+                <svg
+                  viewBox="0 0 24 24"
+                  width="16"
+                  height="16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  aria-hidden
+                >
+                  <circle cx="12" cy="12" r="7" />
+                  <circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none" />
+                  <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+                </svg>
+              )}
+            </button>
           </div>
 
           {/* Drop */}
@@ -451,6 +526,7 @@ export default function BookingForm() {
                 }}
                 placeholder="Enter drop location"
                 error={errors.drop}
+                scope="drop"
               />
             </div>
             <ChevronIcon />
@@ -499,8 +575,8 @@ export default function BookingForm() {
                   type="button"
                   onClick={() => set("vehicleId", v.id)}
                   aria-pressed={selected}
-                  className={`flex items-center gap-2.5 rounded-2xl border px-3 py-3 text-left transition ${
-                    selected ? "border-brand bg-orange-50" : "border-gray-200 bg-white"
+                  className={`flex items-center gap-2.5 rounded-2xl border px-3 py-3 text-left shadow-[0_2px_8px_rgba(0,0,0,0.10),0_1px_3px_rgba(0,0,0,0.06)] transition ${
+                    selected ? "border-brand bg-orange-50" : "border-gray-100 bg-white"
                   }`}
                 >
                   <Image
