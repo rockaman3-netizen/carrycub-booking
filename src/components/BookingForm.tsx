@@ -14,7 +14,7 @@ import {
   type LatLng,
   type AddressSuggestion,
 } from "@/lib/geocode";
-import { estimateFare, type FareEstimate } from "@/lib/fare";
+import { estimateFare } from "@/lib/fare";
 import {
   generateBookingId,
   validateBooking,
@@ -36,6 +36,16 @@ async function resolvePickupLoc(text: string) {
   return parseCurrentLocationString(text) ?? (await geocodeAddress(text));
 }
 
+// Demo-only ETA shown next to each vehicle in the list, purely cosmetic
+// (like Porter/Ola's "20 mins"). Not derived from any real dispatch data.
+const DUMMY_ETA_MINS: Record<string, number> = {
+  "3-wheeler-tempo": 15,
+  "tata-ace-7ft": 20,
+  "9-ft-pickup": 18,
+  "10-ft-pickup": 19,
+  "14-ft-lpt": 25,
+};
+
 const EMPTY: BookingInput = {
   pickup: "",
   drop: "",
@@ -52,11 +62,7 @@ function Err({ text }: { text?: string }) {
   return text ? <span className="mt-1 block text-sm text-red-600">{text}</span> : null;
 }
 
-const STEPS = [
-  { n: 1, label: "Location" },
-  { n: 2, label: "Vehicle" },
-  { n: 3, label: "Your details" },
-] as const;
+const STEPS = [1, 2, 3] as const;
 
 // Which BookingInput keys belong to each step — used to validate only the
 // fields visible on that step, so the customer only ever sees errors for
@@ -67,33 +73,26 @@ const STEP_FIELDS: Record<number, (keyof BookingInput)[]> = {
   3: ["name", "mobile", "notes"],
 };
 
+// Fixed-width connectors so the 1–2–3 indicator is perfectly symmetric and
+// sits dead-center regardless of which step is active.
 function StepHeader({ step }: { step: number }) {
   return (
-    <div className="mb-4 flex items-center justify-center gap-2 px-1">
-      {STEPS.map((s, i) => (
-        <div key={s.n} className="flex items-center gap-2">
+    <div className="mb-4 flex items-center justify-center">
+      {STEPS.map((n, i) => (
+        <div key={n} className="flex items-center">
           <div
             className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition ${
-              s.n < step
+              n < step
                 ? "bg-brand text-white"
-                : s.n === step
+                : n === step
                 ? "bg-brand text-white ring-4 ring-orange-100"
                 : "bg-gray-100 text-gray-400"
             }`}
           >
-            {s.n < step ? "✓" : s.n}
+            {n < step ? "✓" : n}
           </div>
-          <span
-            className={`hidden text-xs font-medium sm:block ${
-              s.n === step ? "text-navy" : "text-gray-400"
-            }`}
-          >
-            {s.label}
-          </span>
           {i < STEPS.length - 1 && (
-            <div
-              className={`h-0.5 w-10 rounded ${s.n < step ? "bg-brand" : "bg-gray-100"}`}
-            />
+            <div className={`mx-2 h-0.5 w-10 rounded ${n < step ? "bg-brand" : "bg-gray-100"}`} />
           )}
         </div>
       ))}
@@ -210,16 +209,14 @@ export default function BookingForm() {
   const [gpsError, setGpsError] = useState("");
   const [gpsLoading, setGpsLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [fareEstimate, setFareEstimate] = useState<FareEstimate | null>(null);
-  const [fareLoading, setFareLoading] = useState(false);
-  const [fareUnavailable, setFareUnavailable] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [mapPickup, setMapPickup] = useState<LatLng | null>(null);
   const [mapDrop, setMapDrop] = useState<LatLng | null>(null);
 
   // Step-1 map: plot pickup / drop as soon as each address resolves to real
-  // coordinates (debounced; results are cached, so the fare preview and the
-  // final submit reuse them instead of hitting OpenStreetMap again).
+  // coordinates (debounced; results are cached, so the per-vehicle fare
+  // list and the final submit reuse them instead of hitting OpenStreetMap
+  // again).
   useEffect(() => {
     const text = values.pickup.trim();
     if (text.length < 3) {
@@ -253,39 +250,6 @@ export default function BookingForm() {
       clearTimeout(t);
     };
   }, [values.drop]);
-
-  // Live fare preview: whenever pickup, drop, or vehicle changes, resolve
-  // both addresses to real coordinates (debounced, reusing the geocode
-  // cache) and recompute the estimate — shown before the customer confirms.
-  useEffect(() => {
-    const pickup = values.pickup.trim();
-    const drop = values.drop.trim();
-    setFareUnavailable(false);
-    if (pickup.length < 3 || drop.length < 3 || !values.vehicleId) {
-      setFareEstimate(null);
-      return;
-    }
-    let cancelled = false;
-    setFareLoading(true);
-    const t = setTimeout(async () => {
-      const [pickupLoc, dropLoc] = await Promise.all([
-        resolvePickupLoc(pickup),
-        geocodeAddress(drop),
-      ]);
-      if (cancelled) return;
-      if (pickupLoc && dropLoc) {
-        setFareEstimate(estimateFare(values.vehicleId, pickupLoc, dropLoc));
-      } else {
-        setFareEstimate(null);
-        setFareUnavailable(true);
-      }
-      setFareLoading(false);
-    }, 700);
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-    };
-  }, [values.pickup, values.drop, values.vehicleId]);
 
   function set<K extends keyof BookingInput>(key: K, value: BookingInput[K]) {
     setValues((v) => ({ ...v, [key]: value }));
@@ -384,6 +348,8 @@ export default function BookingForm() {
     router.push(`/booking/${saved.id}/confirmed`);
   }
 
+  const routeReady = mapPickup !== null && mapDrop !== null;
+
   return (
     <form onSubmit={handleSubmit} noValidate className="flex flex-1 flex-col">
       <div className="flex-1 px-5 pt-5">
@@ -468,7 +434,7 @@ export default function BookingForm() {
             emptyText={null}
             className="relative isolate h-44 overflow-hidden rounded-2xl border border-gray-200"
           />
-          {!(mapPickup && mapDrop) && (
+          {!routeReady && (
             <p className="mt-2 text-center text-xs text-gray-500">
               Select pickup and drop to see your route
             </p>
@@ -484,6 +450,8 @@ export default function BookingForm() {
           <div className="flex flex-col gap-2.5">
             {VEHICLES.map((v) => {
               const selected = values.vehicleId === v.id;
+              const fare = routeReady ? estimateFare(v.id, mapPickup!, mapDrop!) : null;
+              const eta = DUMMY_ETA_MINS[v.id] ?? 20;
               return (
                 <button
                   key={v.id}
@@ -504,43 +472,31 @@ export default function BookingForm() {
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-semibold text-navy">{v.name}</span>
                     <span className="block text-xs text-gray-500">
-                      {v.size} · {v.capacity}
+                      {v.capacity} · {eta} mins
                     </span>
                   </span>
-                  <span
-                    className={`h-5 w-5 shrink-0 rounded-full border-2 ${
-                      selected ? "border-brand bg-brand ring-2 ring-inset ring-white" : "border-gray-300"
-                    }`}
-                  />
+                  <span className="flex shrink-0 flex-col items-end gap-1.5">
+                    <span className="text-sm font-bold text-navy">
+                      {fare ? `₹${fare.fare}` : "—"}
+                    </span>
+                    <span
+                      className={`h-5 w-5 shrink-0 rounded-full border-2 ${
+                        selected ? "border-brand bg-brand ring-2 ring-inset ring-white" : "border-gray-300"
+                      }`}
+                    />
+                  </span>
                 </button>
               );
             })}
           </div>
           <Err text={errors.vehicleId} />
 
-        {/* Fare estimate — shown before the customer confirms the booking */}
-        {(fareLoading || fareEstimate || fareUnavailable) && (
-          <div className="mt-4 rounded-2xl border border-gray-200 bg-white px-4 py-3.5">
-            {fareLoading ? (
-              <p className="text-sm text-gray-400">Calculating estimated fare…</p>
-            ) : fareEstimate ? (
-              <>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm text-gray-500">Estimated fare</span>
-                  <span className="text-lg font-bold text-navy">₹{fareEstimate.fare}</span>
-                </div>
-                <p className="mt-1 text-xs text-gray-400">
-                  ~{fareEstimate.distanceKm} km · test estimate, actual fare may vary
-                </p>
-              </>
-            ) : (
-              <p className="text-xs text-gray-400">
-                Couldn&apos;t estimate a fare for these addresses yet — you can still book, and
-                the driver will confirm the final price.
-              </p>
-            )}
-          </div>
-        )}
+          {!routeReady && (
+            <p className="mt-3 text-center text-xs text-gray-400">
+              We&apos;ll show exact fares once your pickup &amp; drop are located — you can still
+              book, and the driver will confirm the price.
+            </p>
+          )}
         </div>
         )}
 
