@@ -2,7 +2,7 @@ import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.carrycub.driver',
-  appName: 'CarryCub',
+  appName: 'Captain',
   webDir: 'public',
   server: {
     url: 'https://carrycub-booking.rock-aman3.workers.dev/driver/login',
