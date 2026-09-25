@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "dev.workers.rock_aman3.carrycub_booking_fb.twa",
+    "sha256_cert_fingerprints": ["E1:FB:DB:9D:9D:CD:16:7E:C3:40:8B:FD:64:BD:CA:3D:E4:5B:50:B8:59:A7:C2:50:46:B8:12:B4:19:76:78:F5"]
+  }
+}]
