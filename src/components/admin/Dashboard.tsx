@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { listBookings, type StoredBooking } from "@/lib/store";
 import { opsGroupOf, type OpsGroup } from "@/lib/status";
 import { listDrivers, type Driver } from "@/lib/drivers";
 import { usePolling } from "@/lib/poll";
+import { registerPushToken } from "@/lib/firebase-client";
 import BookingRow from "@/components/admin/BookingRow";
 import EmptyState from "@/components/admin/EmptyState";
 
@@ -28,6 +29,12 @@ export default function Dashboard() {
 
   usePolling(async () => setBookings(await listBookings()), []);
   usePolling(async () => setDrivers(await listDrivers()), [], 15000);
+
+  // Ask for notification permission once the admin dashboard loads, so
+  // new-booking pushes reach this device even when it's locked.
+  useEffect(() => {
+    registerPushToken({ role: "admin" });
+  }, []);
 
   const counts: Record<StatFilter, number> = {
     all: bookings.length,
