@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createBooking, listBookings, listBookingsForDriver } from "@/lib/sheets";
+import { createBooking, listBookings, listBookingsForDriver, listTokens } from "@/lib/sheets";
 import { generateBookingId, normalizeId, validateBooking, type BookingInput } from "@/lib/booking";
 import { estimateFare } from "@/lib/fare";
 import { isAdminRequest } from "@/lib/admin-api-auth";
+import { sendPushToTokens } from "@/lib/push";
 
 // Real, in-range coordinates only — never pass through garbage a caller
 // (or a buggy/offline geocode) might send. Anything else is treated the
@@ -86,6 +87,24 @@ export async function POST(req: NextRequest) {
       distanceKm: fare?.distanceKm ?? null,
       estimatedFare: fare?.fare ?? null,
     });
+
+    // New booking → notify everyone who has admin/driver push enabled.
+    // A push failure must never break booking creation, so this is
+    // wrapped in its own try/catch and the response goes out regardless.
+    try {
+      const tokens = await listTokens(["admin", "driver"]);
+      if (tokens.length > 0) {
+        await sendPushToTokens(
+          tokens.map((t) => t.token),
+          "New Booking",
+          `${input.name} ne ${input.pickup} se ${input.drop} ke liye booking ki hai.`,
+          { type: "new_booking", bookingId: id },
+        );
+      }
+    } catch (pushErr) {
+      console.error("New booking push failed", pushErr);
+    }
+
     return NextResponse.json({ booking }, { status: 201 });
   } catch (err) {
     if ((err as Error).message === "DUPLICATE_BOOKING_ID") {
