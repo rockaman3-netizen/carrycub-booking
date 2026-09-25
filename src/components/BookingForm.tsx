@@ -69,9 +69,9 @@ const STEP_FIELDS: Record<number, (keyof BookingInput)[]> = {
 
 function StepHeader({ step }: { step: number }) {
   return (
-    <div className="mb-4 flex items-center gap-2 px-1">
+    <div className="mb-4 flex items-center justify-center gap-2 px-1">
       {STEPS.map((s, i) => (
-        <div key={s.n} className="flex flex-1 items-center gap-2">
+        <div key={s.n} className="flex items-center gap-2">
           <div
             className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition ${
               s.n < step
@@ -92,7 +92,7 @@ function StepHeader({ step }: { step: number }) {
           </span>
           {i < STEPS.length - 1 && (
             <div
-              className={`h-0.5 flex-1 rounded ${s.n < step ? "bg-brand" : "bg-gray-100"}`}
+              className={`h-0.5 w-10 rounded ${s.n < step ? "bg-brand" : "bg-gray-100"}`}
             />
           )}
         </div>
