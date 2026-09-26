@@ -1,52 +1,57 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 const SPLASH_FLAG = "carrycub_splash_seen_v1";
 
 const FADE_IN_MS = 600; // 0 – 600ms: logo fades + scales in
 const HOLD_MS = 1200; // 600 – 1800ms: logo sits still, fully visible, gentle breathing
-const EXIT_MS = 300; // 1800 – 2100ms: fade out to reveal the app
+const EXIT_MS = 300; // fade-out duration
 const TOTAL_MS = FADE_IN_MS + HOLD_MS; // 1800ms visible before exit starts
 
 export default function SplashOverlay({ children }: { children: ReactNode }) {
-  const [visible, setVisible] = useState(false);
   const [leaving, setLeaving] = useState(false);
-  const [mounted, setMounted] = useState(false);
-  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const [gone, setGone] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
-
     const alreadySeen =
       window.sessionStorage.getItem(SPLASH_FLAG) === "1";
-    if (alreadySeen) return; // don't show splash again this session
-
     window.sessionStorage.setItem(SPLASH_FLAG, "1");
 
     const prefersReducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)"
     ).matches;
 
-    setVisible(true);
-
-    if (prefersReducedMotion) {
-      timers.current.push(setTimeout(() => setVisible(false), 700));
-      return () => timers.current.forEach(clearTimeout);
+    if (alreadySeen) {
+      const t1 = setTimeout(() => setLeaving(true), 50);
+      const t2 = setTimeout(() => setGone(true), 50 + EXIT_MS);
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+      };
     }
 
-    timers.current.push(
-      setTimeout(() => setLeaving(true), TOTAL_MS),
-      setTimeout(() => setVisible(false), TOTAL_MS + EXIT_MS)
-    );
+    if (prefersReducedMotion) {
+      const t1 = setTimeout(() => setLeaving(true), 700);
+      const t2 = setTimeout(() => setGone(true), 700 + EXIT_MS);
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+      };
+    }
 
-    return () => timers.current.forEach(clearTimeout);
+    const t1 = setTimeout(() => setLeaving(true), TOTAL_MS);
+    const t2 = setTimeout(() => setGone(true), TOTAL_MS + EXIT_MS);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
   }, []);
 
   return (
     <>
       {children}
-      {mounted && visible && (
+      {!gone && (
         <div className={`splash-root ${leaving ? "splash-leave" : ""}`}>
           <img
             className="splash-logo"
@@ -78,7 +83,6 @@ export default function SplashOverlay({ children }: { children: ReactNode }) {
                 breathe 2600ms ease-in-out ${FADE_IN_MS}ms infinite;
             }
 
-            /* 0 - 600ms: logo fades + scales in */
             @keyframes fadeInLogo {
               to {
                 opacity: 1;
@@ -86,9 +90,6 @@ export default function SplashOverlay({ children }: { children: ReactNode }) {
               }
             }
 
-            /* After the entrance: a slow, gentle breathing so the logo
-               still feels alive while it holds on screen — subtle
-               enough not to look tacky. */
             @keyframes breathe {
               0%,
               100% {
