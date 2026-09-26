@@ -75,8 +75,21 @@ export default function SplashOverlay({ children }: { children: ReactNode }) {
               opacity: 0;
               transform: scale(0.98);
 
-              -webkit-mask-image: linear-gradient(118deg, #000 0%, transparent 0%);
-              mask-image: linear-gradient(118deg, #000 0%, transparent 0%);
+              /* FIXED: real 3-stop gradient (black band -> transparent),
+                 not two stops collapsed on the same position. This band
+                 is what sweeps across the image to reveal it. */
+              -webkit-mask-image: linear-gradient(
+                118deg,
+                #000 0%,
+                #000 40%,
+                transparent 60%
+              );
+              mask-image: linear-gradient(
+                118deg,
+                #000 0%,
+                #000 40%,
+                transparent 60%
+              );
               -webkit-mask-size: 340% 340%;
               mask-size: 340% 340%;
               -webkit-mask-position: 140% -40%;
@@ -89,6 +102,7 @@ export default function SplashOverlay({ children }: { children: ReactNode }) {
                 settle ${SETTLE_MS}ms ease-in-out ${FADE_SCALE_IN_MS + WIPE_MS}ms forwards;
             }
 
+            /* 0 - 500ms: subtle fade + scale 98% -> 100% */
             @keyframes fadeScaleIn {
               to {
                 opacity: 1;
@@ -96,6 +110,10 @@ export default function SplashOverlay({ children }: { children: ReactNode }) {
               }
             }
 
+            /* 500 - 1400ms: diagonal wipe following the route's own
+               direction (top-right pin -> bottom-left pin). The black
+               band moves across, progressively revealing the artwork —
+               nothing is duplicated or redrawn. */
             @keyframes routeWipe {
               from {
                 -webkit-mask-position: 140% -40%;
@@ -107,6 +125,7 @@ export default function SplashOverlay({ children }: { children: ReactNode }) {
               }
             }
 
+            /* 1400 - 2000ms: gentle settle, 100% -> 101% -> 100% */
             @keyframes settle {
               0% {
                 transform: scale(1);
@@ -116,6 +135,16 @@ export default function SplashOverlay({ children }: { children: ReactNode }) {
               }
               100% {
                 transform: scale(1);
+              }
+            }
+
+            /* Fallback: if mask-image isn't supported at all (very old
+               WebView), just show the artwork plainly instead of a
+               permanently blank/white screen. */
+            @supports not (mask-image: linear-gradient(#000, transparent)) {
+              .splash-bg {
+                -webkit-mask-image: none;
+                mask-image: none;
               }
             }
 
