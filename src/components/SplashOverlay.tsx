@@ -74,10 +74,8 @@ export default function SplashOverlay({ children }: { children: ReactNode }) {
 
               opacity: 0;
               transform: scale(0.98);
+              filter: brightness(1);
 
-              /* FIXED: real 3-stop gradient (black band -> transparent),
-                 not two stops collapsed on the same position. This band
-                 is what sweeps across the image to reveal it. */
               -webkit-mask-image: linear-gradient(
                 118deg,
                 #000 0%,
@@ -99,7 +97,8 @@ export default function SplashOverlay({ children }: { children: ReactNode }) {
 
               animation: fadeScaleIn ${FADE_SCALE_IN_MS}ms cubic-bezier(0.22, 1, 0.36, 1) forwards,
                 routeWipe ${WIPE_MS}ms ease-in-out ${FADE_SCALE_IN_MS}ms forwards,
-                settle ${SETTLE_MS}ms ease-in-out ${FADE_SCALE_IN_MS + WIPE_MS}ms forwards;
+                settle ${SETTLE_MS}ms ease-in-out ${FADE_SCALE_IN_MS + WIPE_MS}ms forwards,
+                sheen ${SETTLE_MS}ms ease-in-out ${FADE_SCALE_IN_MS + WIPE_MS}ms forwards;
             }
 
             /* 0 - 500ms: subtle fade + scale 98% -> 100% */
@@ -125,22 +124,38 @@ export default function SplashOverlay({ children }: { children: ReactNode }) {
               }
             }
 
-            /* 1400 - 2000ms: gentle settle, 100% -> 101% -> 100% */
+            /* 1400 - 2000ms: settle — made clearly visible (was too
+               subtle before) with a bigger scale swing plus a slight
+               upward drift, so motion reads for the full 600ms instead
+               of feeling like the animation already stopped. */
             @keyframes settle {
               0% {
-                transform: scale(1);
+                transform: scale(1) translateY(0);
               }
-              50% {
-                transform: scale(1.01);
+              45% {
+                transform: scale(1.022) translateY(-3px);
               }
               100% {
-                transform: scale(1);
+                transform: scale(1) translateY(0);
               }
             }
 
-            /* Fallback: if mask-image isn't supported at all (very old
-               WebView), just show the artwork plainly instead of a
-               permanently blank/white screen. */
+            /* Paired with settle: a soft brightness "sheen" so the
+               final beat feels premium/intentional, not just a wobble.
+               Purely a temporary filter — the artwork pixels/colors
+               are never altered. */
+            @keyframes sheen {
+              0% {
+                filter: brightness(1);
+              }
+              45% {
+                filter: brightness(1.06);
+              }
+              100% {
+                filter: brightness(1);
+              }
+            }
+
             @supports not (mask-image: linear-gradient(#000, transparent)) {
               .splash-bg {
                 -webkit-mask-image: none;
@@ -153,6 +168,7 @@ export default function SplashOverlay({ children }: { children: ReactNode }) {
                 animation: none !important;
                 opacity: 1;
                 transform: none;
+                filter: none;
                 -webkit-mask-image: none;
                 mask-image: none;
               }
