@@ -9,7 +9,8 @@ const config: CapacitorConfig = {
     cleartext: false
   },
   android: {
-    path: 'android-customer'
+    path: 'android-customer',
+    backgroundColor: '#FFFFFFFF'
   }
 };
 
