@@ -13,8 +13,6 @@ function env(name: string): string {
 
 const projectId = () => process.env.FIREBASE_PROJECT_ID || "carrycub-truck-booking";
 
-// Same key-cleaning logic as sheets.ts — accepts the key pasted in
-// almost any form (whole JSON, with/without BEGIN/END lines, literal \n, etc.)
 function cleanPrivateKey(): string {
   let raw = env("FIREBASE_PRIVATE_KEY").trim();
   if (raw.startsWith("{")) {
@@ -75,11 +73,15 @@ async function getFcmToken(): Promise<string> {
   return data.access_token;
 }
 
+// android: pass channelId + sound to target a specific native Android
+// notification channel (e.g. the driver-accept custom tone). Omit it
+// and the message behaves exactly as before (web push only).
 export async function sendPushToTokens(
   tokens: string[],
   title: string,
   body: string,
   data?: Record<string, string>,
+  android?: { channelId: string; sound?: string },
 ): Promise<void> {
   if (!tokens || tokens.length === 0) return;
 
@@ -106,6 +108,16 @@ export async function sendPushToTokens(
             token,
             notification: { title, body },
             data: data || {},
+            ...(android
+              ? {
+                  android: {
+                    notification: {
+                      channel_id: android.channelId,
+                      sound: android.sound ?? "default",
+                    },
+                  },
+                }
+              : {}),
             webpush: {
               notification: { title, body, icon: "/icon-192.png" },
               fcm_options: { link: "/" },
