@@ -27,6 +27,10 @@ function app() {
   return getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 async function sendTokenToServer(token: string, input: PushInput): Promise<void> {
   const res = await fetch("/api/notifications/register", {
     method: "POST",
@@ -40,14 +44,29 @@ async function sendTokenToServer(token: string, input: PushInput): Promise<void>
   }
 }
 
-// Native Android app (Capacitor APK): real FCM token + custom tone channel
-async function registerNative(input: PushInput): Promise<void> {
+// Permission dialog ka jawab aane tak wait karta hai (max ~20 sec)
+async function getFinalPermission(): Promise<string> {
   let perm = await PushNotifications.checkPermissions();
   if (perm.receive === "prompt" || perm.receive === "prompt-with-rationale") {
     perm = await PushNotifications.requestPermissions();
   }
-  if (perm.receive !== "granted") {
-    alert(`Permission not granted: ${perm.receive}`);
+  let tries = 0;
+  while (
+    (perm.receive === "prompt" || perm.receive === "prompt-with-rationale") &&
+    tries < 20
+  ) {
+    await sleep(1000);
+    perm = await PushNotifications.checkPermissions();
+    tries++;
+  }
+  return perm.receive;
+}
+
+// Native Android app (Capacitor APK): real FCM token + custom tone channel
+async function registerNative(input: PushInput): Promise<void> {
+  const status = await getFinalPermission();
+  if (status !== "granted") {
+    alert(`Permission not granted: ${status}`);
     return;
   }
 
@@ -115,15 +134,24 @@ async function registerWeb(input: PushInput): Promise<void> {
   await sendTokenToServer(token, input);
 }
 
-export async function registerPushToken(input: PushInput): Promise<void> {
-  try {
-    if (typeof window === "undefined") return;
-    if (Capacitor.isNativePlatform()) {
-      await registerNative(input);
-    } else {
-      await registerWeb(input);
+// Ek saath do baar register na ho
+let inflight: Promise<void> | null = null;
+
+export function registerPushToken(input: PushInput): Promise<void> {
+  if (inflight) return inflight;
+  inflight = (async () => {
+    try {
+      if (typeof window === "undefined") return;
+      if (Capacitor.isNativePlatform()) {
+        await registerNative(input);
+      } else {
+        await registerWeb(input);
+      }
+    } catch (err) {
+      alert(`Push setup error: ${err}`);
     }
-  } catch (err) {
-    alert(`Push setup error: ${err}`);
-  }
+  })().finally(() => {
+    inflight = null;
+  });
+  return inflight;
 }
