@@ -33,6 +33,33 @@ jobs:
           mkdir -p android-customer/app/src/main/assets
           npx cap sync android
 
+      - name: Generate notification tone
+        run: |
+          mkdir -p android-customer/app/src/main/res/raw
+          python3 - <<'PY'
+          import wave, math, struct
+          sr = 44100
+          total = int(sr * 1.6)
+          buf = [0.0] * total
+          def add(freq, start, dur, vol):
+              for i in range(int(sr * dur)):
+                  t = i / sr
+                  env = math.exp(-4.5 * t) * min(1.0, t / 0.005)
+                  s = math.sin(2 * math.pi * freq * t) + 0.4 * math.sin(4 * math.pi * freq * t) + 0.15 * math.sin(6 * math.pi * freq * t)
+                  idx = int(sr * start) + i
+                  if idx < total:
+                      buf[idx] += s * env * vol
+          add(1318.5, 0.0, 0.7, 1.0)
+          add(880.0, 0.28, 1.0, 1.1)
+          peak = max(abs(x) for x in buf) * 1.15
+          w = wave.open('android-customer/app/src/main/res/raw/notification_sound.wav', 'wb')
+          w.setnchannels(1)
+          w.setsampwidth(2)
+          w.setframerate(sr)
+          w.writeframes(b''.join(struct.pack('<h', int(x / peak * 32767)) for x in buf))
+          w.close()
+          PY
+
       - name: Build APK
         run: |
           cd android-customer
