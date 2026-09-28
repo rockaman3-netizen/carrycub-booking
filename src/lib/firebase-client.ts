@@ -35,7 +35,7 @@ async function sendTokenToServer(token: string, input: PushInput): Promise<void>
   });
   if (!res.ok) {
     alert(`Register API failed: ${res.status} ${await res.text()}`);
-  } else {
+  } else if (input.role !== "driver") {
     alert("Token registered successfully!");
   }
 }
@@ -51,15 +51,29 @@ async function registerNative(input: PushInput): Promise<void> {
     return;
   }
 
-  await PushNotifications.createChannel({
-    id: "driver_accept_channel",
-    name: "Driver Accept Notifications",
-    description: "Alerts when a driver accepts your booking",
-    importance: 5,
-    sound: "notification_sound",
-    vibration: true,
-    visibility: 1,
-  });
+  if (input.role === "driver") {
+    // Driver app: phone-ring style tone when a booking is assigned
+    await PushNotifications.createChannel({
+      id: "driver_assign_channel",
+      name: "New Trip Assigned",
+      description: "Ring when a booking is assigned to you",
+      importance: 5,
+      sound: "driver_ring",
+      vibration: true,
+      visibility: 1,
+    });
+  } else {
+    // Customer app: chime when a driver accepts the booking
+    await PushNotifications.createChannel({
+      id: "driver_accept_channel",
+      name: "Driver Accept Notifications",
+      description: "Alerts when a driver accepts your booking",
+      importance: 5,
+      sound: "notification_sound",
+      vibration: true,
+      visibility: 1,
+    });
+  }
 
   await PushNotifications.removeAllListeners();
   await PushNotifications.addListener("registration", async (t) => {
