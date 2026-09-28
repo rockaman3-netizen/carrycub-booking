@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: 'Captain',
   webDir: 'public',
   server: {
-    url: 'https://carrycub-booking.rock-aman3.workers.dev/driver/login',
+    url: 'https://carrycub-booking-fb.rock-aman3.workers.dev/driver/login',
     cleartext: false
   },
   plugins: {
