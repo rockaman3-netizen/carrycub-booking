@@ -19,7 +19,7 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -30,6 +30,35 @@ jobs:
 
       - name: Sync Capacitor Android
         run: npx cap sync android
+
+      - name: Generate driver ring tone
+        run: |
+          mkdir -p android/app/src/main/res/raw
+          python3 - <<'PY'
+          import wave, struct, math
+          rate = 22050
+          def burst(dur):
+              n = int(rate * dur)
+              out = []
+              for i in range(n):
+                  t = i / rate
+                  env = min(1.0, i / (rate * 0.02), (n - i) / (rate * 0.03))
+                  mod = 0.6 + 0.4 * math.sin(2 * math.pi * 25 * t)
+                  v = 0.5 * (math.sin(2 * math.pi * 880 * t) + math.sin(2 * math.pi * 1100 * t)) * mod * env
+                  out.append(int(v * 0.8 * 32767))
+              return out
+          def silence(dur):
+              return [0] * int(rate * dur)
+          data = []
+          for _ in range(5):
+              data += burst(0.4) + silence(0.2) + burst(0.4) + silence(1.0)
+          w = wave.open("android/app/src/main/res/raw/driver_ring.wav", "wb")
+          w.setnchannels(1)
+          w.setsampwidth(2)
+          w.setframerate(rate)
+          w.writeframes(b"".join(struct.pack("<h", s) for s in data))
+          w.close()
+          PY
 
       - name: Grant execute permission for gradlew
         run: chmod +x android/gradlew
