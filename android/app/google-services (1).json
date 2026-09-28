@@ -1,0 +1,49 @@
+{
+  "project_info": {
+    "project_number": "1074926867268",
+    "firebase_url": "https://carrycub-truck-booking-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "carrycub-truck-booking",
+    "storage_bucket": "carrycub-truck-booking.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1074926867268:android:a5098680168719b5037d11",
+        "android_client_info": {
+          "package_name": "com.carrycub.customer"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBnwtWVa4vDLwCLGW3BD2DMndurGtjZTAA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1074926867268:android:468c3480b583f315037d11",
+        "android_client_info": {
+          "package_name": "com.carrycub.driver"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBnwtWVa4vDLwCLGW3BD2DMndurGtjZTAA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
