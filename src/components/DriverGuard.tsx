@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { currentDriver, driverLogout } from "@/lib/driver-auth";
+import { registerPushToken } from "@/lib/firebase-client";
 import type { Driver } from "@/lib/drivers";
 
 export default function DriverGuard({ children }: { children: React.ReactNode }) {
@@ -15,6 +16,12 @@ export default function DriverGuard({ children }: { children: React.ReactNode })
     if (d) setDriver(d);
     else router.replace("/driver/login");
   }, [router]);
+
+  useEffect(() => {
+    if (driver?.id) {
+      registerPushToken({ role: "driver", driverId: driver.id });
+    }
+  }, [driver?.id]);
 
   if (!driver) return <p className="px-6 py-12 text-center text-sm text-gray-400">Loading...</p>;
 
