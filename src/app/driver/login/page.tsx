@@ -15,9 +15,24 @@ export default function DriverLoginPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const driver = await driverLogin(phone);
-    if (driver) router.replace("/driver");
-    else setError("No driver found with that phone number");
+    try {
+      // TEMP DEBUG: show the real server response
+      const res = await fetch("/api/driver-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: phone.trim() }),
+      });
+      const text = await res.text();
+      if (!res.ok) {
+        setError(`Server error ${res.status}: ${text.slice(0, 150)}`);
+        return;
+      }
+      const driver = await driverLogin(phone);
+      if (driver) router.replace("/driver");
+      else setError(`No driver found. Server said: ${text.slice(0, 150)}`);
+    } catch (err) {
+      setError(`Network error: ${String(err).slice(0, 150)}`);
+    }
   }
 
   return (
