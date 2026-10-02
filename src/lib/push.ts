@@ -73,15 +73,17 @@ async function getFcmToken(): Promise<string> {
   return data.access_token;
 }
 
-// android: pass channelId + sound to target a specific native Android
-// notification channel (e.g. the driver-accept custom tone). Omit it
-// and the message behaves exactly as before (web push only).
+// android options:
+//  - channelId / sound: native Android notification channel + tone.
+//  - dataOnly: true  -> "notification" part NAHI bheja jata. Title/body `data`
+//    me jate hain, taaki APK ki DriverMessagingService chale aur lambi ring baje.
+// Har Android message high priority ke saath jata hai (sleep mode me bhi turant).
 export async function sendPushToTokens(
   tokens: string[],
   title: string,
   body: string,
   data?: Record<string, string>,
-  android?: { channelId: string; sound?: string },
+  android?: { channelId: string; sound?: string; dataOnly?: boolean },
 ): Promise<void> {
   if (!tokens || tokens.length === 0) return;
 
@@ -94,6 +96,40 @@ export async function sendPushToTokens(
   }
 
   const url = `https://fcm.googleapis.com/v1/projects/${projectId()}/messages:send`;
+  const dataOnly = android?.dataOnly === true;
+
+  const buildMessage = (token: string) => {
+    if (dataOnly) {
+      return {
+        token,
+        data: { ...(data || {}), title, body },
+        android: {
+          priority: "HIGH",
+          ttl: "60s",
+        },
+      };
+    }
+    return {
+      token,
+      notification: { title, body },
+      data: data || {},
+      android: {
+        priority: "HIGH",
+        ...(android
+          ? {
+              notification: {
+                channel_id: android.channelId,
+                sound: android.sound ?? "default",
+              },
+            }
+          : {}),
+      },
+      webpush: {
+        notification: { title, body, icon: "/icon-192.png" },
+        fcm_options: { link: "/" },
+      },
+    };
+  };
 
   const results = await Promise.allSettled(
     tokens.map((token) =>
@@ -103,27 +139,7 @@ export async function sendPushToTokens(
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          message: {
-            token,
-            notification: { title, body },
-            data: data || {},
-            ...(android
-              ? {
-                  android: {
-                    notification: {
-                      channel_id: android.channelId,
-                      sound: android.sound ?? "default",
-                    },
-                  },
-                }
-              : {}),
-            webpush: {
-              notification: { title, body, icon: "/icon-192.png" },
-              fcm_options: { link: "/" },
-            },
-          },
-        }),
+        body: JSON.stringify({ message: buildMessage(token) }),
       }),
     ),
   );
