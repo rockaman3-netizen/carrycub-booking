@@ -19,9 +19,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const result = await assignDriver(normalizeId(id), driver);
     if (result.error) return NextResponse.json({ error: result.error }, { status: 400 });
 
-    // Driver assigned -> ring-style push to that driver's registered devices
-    // via the native Android channel (custom ring tone). Never breaks the
-    // response if push fails.
+    // Driver assigned -> data-only high-priority push to that driver's devices.
+    // Android app (RingService) isse lambi looping ring bajata hai.
+    // Never breaks the response if push fails.
     try {
       const tokens = await listTokens(["driver"]);
       const driverTokens = tokens
@@ -33,8 +33,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           "Naya Trip Assign Hua!",
           `Booking #${normalizeId(id)} aapko assign hui hai. App kholkar Accept karein.`,
           { type: "booking_assigned", bookingId: normalizeId(id) },
-          { channelId: "driver_assign_channel", sound: "driver_ring" },
+          { channelId: "driver_assign_channel", sound: "driver_ring", dataOnly: true },
         );
+      } else {
+        console.warn(`Driver-assign push skipped: no registered token for driverId "${driverId}"`);
       }
     } catch (pushErr) {
       console.error("Driver-assign push failed", pushErr);
