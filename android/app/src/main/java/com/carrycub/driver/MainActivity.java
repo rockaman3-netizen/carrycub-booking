@@ -8,7 +8,7 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
 
     @Override
-    protected void onResume() {
+    public void onResume() {
         super.onResume();
         // Phone unlock hai aur app khuli hai -> ring band.
         // Lock screen par ho to ring chalti rahegi (unlock hone par RingService khud band karti hai).
