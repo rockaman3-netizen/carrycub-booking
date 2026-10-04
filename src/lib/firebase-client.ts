@@ -17,6 +17,9 @@ const firebaseConfig = {
 const VAPID_KEY =
   "BL4OOcvKCvKKSERsUVzdTRntbF-t7GIU5c4GzC8bLuu3k8rDcCLxcQqagd5naIGf1jvhVKRaL4NPaq3Wp3Ey3_0";
 
+// Native token fail hone par kitni baar dobara try karna hai
+const MAX_NATIVE_RETRIES = 6;
+
 type PushInput = {
   role: "admin" | "driver" | "customer";
   driverId?: string;
@@ -32,15 +35,17 @@ function sleep(ms: number): Promise<void> {
 }
 
 async function sendTokenToServer(token: string, input: PushInput): Promise<void> {
-  const res = await fetch("/api/notifications/register", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token, ...input }),
-  });
-  if (!res.ok) {
-    alert(`Register API failed: ${res.status} ${await res.text()}`);
-  } else if (input.role !== "driver") {
-    alert("Token registered successfully!");
+  try {
+    const res = await fetch("/api/notifications/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, ...input }),
+    });
+    if (!res.ok) {
+      console.error(`Register API failed: ${res.status} ${await res.text()}`);
+    }
+  } catch (err) {
+    console.error("Register API error", err);
   }
 }
 
@@ -66,7 +71,7 @@ async function getFinalPermission(): Promise<string> {
 async function registerNative(input: PushInput): Promise<void> {
   const status = await getFinalPermission();
   if (status !== "granted") {
-    alert(`Permission not granted: ${status}`);
+    console.error(`Push permission not granted: ${status}`);
     return;
   }
 
@@ -94,12 +99,25 @@ async function registerNative(input: PushInput): Promise<void> {
     });
   }
 
+  let retries = 0;
+
   await PushNotifications.removeAllListeners();
   await PushNotifications.addListener("registration", async (t) => {
+    retries = 0;
     await sendTokenToServer(t.value, input);
   });
-  await PushNotifications.addListener("registrationError", (e) => {
-    alert(`Native push registration error: ${JSON.stringify(e)}`);
+  await PushNotifications.addListener("registrationError", async (e) => {
+    console.error("Native push registration error:", JSON.stringify(e));
+    // SERVICE_NOT_AVAILABLE aksar thodi der ka hota hai -> khud dobara try
+    if (retries < MAX_NATIVE_RETRIES) {
+      retries++;
+      await sleep(Math.min(3000 * retries, 15000));
+      try {
+        await PushNotifications.register();
+      } catch (err) {
+        console.error("Native push retry failed", err);
+      }
+    }
   });
   await PushNotifications.register();
 }
@@ -107,28 +125,38 @@ async function registerNative(input: PushInput): Promise<void> {
 // Normal browser (website): web push via service worker
 async function registerWeb(input: PushInput): Promise<void> {
   if (!(await isSupported())) {
-    alert("Push not supported on this browser");
+    console.error("Push not supported on this browser");
     return;
   }
   if (!("serviceWorker" in navigator)) {
-    alert("Service worker not supported");
+    console.error("Service worker not supported");
     return;
   }
 
   const permission = await Notification.requestPermission();
   if (permission !== "granted") {
-    alert(`Permission not granted: ${permission}`);
+    console.error(`Push permission not granted: ${permission}`);
     return;
   }
 
   const registration = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
   const messaging = getMessaging(app());
-  const token = await getToken(messaging, {
-    vapidKey: VAPID_KEY,
-    serviceWorkerRegistration: registration,
-  });
+
+  let token = "";
+  let lastErr: unknown = null;
+  for (let i = 0; i < 3 && !token; i++) {
+    try {
+      token = await getToken(messaging, {
+        vapidKey: VAPID_KEY,
+        serviceWorkerRegistration: registration,
+      });
+    } catch (err) {
+      lastErr = err;
+      await sleep(2000 * (i + 1));
+    }
+  }
   if (!token) {
-    alert("Could not get FCM token (token was empty)");
+    console.error("Web push: could not get FCM token", lastErr);
     return;
   }
   await sendTokenToServer(token, input);
@@ -148,7 +176,7 @@ export function registerPushToken(input: PushInput): Promise<void> {
         await registerWeb(input);
       }
     } catch (err) {
-      alert(`Push setup error: ${err}`);
+      console.error("Push setup error:", err);
     }
   })().finally(() => {
     inflight = null;
