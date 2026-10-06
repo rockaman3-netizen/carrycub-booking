@@ -34,7 +34,38 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// Screen ke neeche chhoti status patti (alert nahi). Tap karne par hat jati hai.
+let hideTimer: ReturnType<typeof setTimeout> | null = null;
+
+function status(msg: string, isError = false, hideAfterMs = 0): void {
+  try {
+    if (typeof document === "undefined") return;
+    let el = document.getElementById("push-status-banner");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "push-status-banner";
+      el.style.cssText =
+        "position:fixed;left:0;right:0;bottom:0;z-index:99999;padding:8px 12px;" +
+        "font:12px/1.4 monospace;color:#fff;word-break:break-all;";
+      el.onclick = () => el && el.remove();
+      document.body.appendChild(el);
+    }
+    el.style.background = isError ? "#991b1b" : "#1e3a8a";
+    el.textContent = "PUSH: " + msg;
+    if (hideTimer) clearTimeout(hideTimer);
+    if (hideAfterMs > 0) {
+      hideTimer = setTimeout(() => {
+        const e = document.getElementById("push-status-banner");
+        if (e) e.remove();
+      }, hideAfterMs);
+    }
+  } catch {
+    // status patti ki wajah se kabhi kuch nahi tootna chahiye
+  }
+}
+
 async function sendTokenToServer(token: string, input: PushInput): Promise<void> {
+  status("token mila, server ko bhej raha hoon...");
   try {
     const res = await fetch("/api/notifications/register", {
       method: "POST",
@@ -42,10 +73,13 @@ async function sendTokenToServer(token: string, input: PushInput): Promise<void>
       body: JSON.stringify({ token, ...input }),
     });
     if (!res.ok) {
-      console.error(`Register API failed: ${res.status} ${await res.text()}`);
+      const text = await res.text();
+      status(`server ne mana kiya: HTTP ${res.status} ${text.slice(0, 150)}`, true);
+    } else {
+      status("DONE: token server me save ho gaya (HTTP 200)", false, 8000);
     }
   } catch (err) {
-    console.error("Register API error", err);
+    status(`server tak request nahi gayi: ${String(err).slice(0, 150)}`, true);
   }
 }
 
@@ -69,11 +103,13 @@ async function getFinalPermission(): Promise<string> {
 
 // Native Android app (Capacitor APK): real FCM token + custom tone channel
 async function registerNative(input: PushInput): Promise<void> {
-  const status = await getFinalPermission();
-  if (status !== "granted") {
-    console.error(`Push permission not granted: ${status}`);
+  status("android app: notification permission check ho rahi hai...");
+  const perm = await getFinalPermission();
+  if (perm !== "granted") {
+    status(`notification permission nahi mili: ${perm}`, true);
     return;
   }
+  status("permission mil gayi, channel ban raha hai...");
 
   if (input.role === "driver") {
     // Driver app: phone-ring style tone when a booking is assigned
@@ -107,35 +143,39 @@ async function registerNative(input: PushInput): Promise<void> {
     await sendTokenToServer(t.value, input);
   });
   await PushNotifications.addListener("registrationError", async (e) => {
-    console.error("Native push registration error:", JSON.stringify(e));
-    // SERVICE_NOT_AVAILABLE aksar thodi der ka hota hai -> khud dobara try
+    const msg = JSON.stringify(e);
     if (retries < MAX_NATIVE_RETRIES) {
       retries++;
+      status(`token error (${retries}/${MAX_NATIVE_RETRIES}), dobara try: ${msg.slice(0, 120)}`, true);
+      // SERVICE_NOT_AVAILABLE aksar thodi der ka hota hai -> khud dobara try
       await sleep(Math.min(3000 * retries, 15000));
       try {
         await PushNotifications.register();
       } catch (err) {
-        console.error("Native push retry failed", err);
+        status(`retry fail: ${String(err).slice(0, 120)}`, true);
       }
+    } else {
+      status(`token nahi ban paya (${MAX_NATIVE_RETRIES} try ke baad): ${msg.slice(0, 150)}`, true);
     }
   });
+  status("Firebase se token maang raha hoon...");
   await PushNotifications.register();
 }
 
 // Normal browser (website): web push via service worker
 async function registerWeb(input: PushInput): Promise<void> {
   if (!(await isSupported())) {
-    console.error("Push not supported on this browser");
+    status("is browser me push support nahi hai", true);
     return;
   }
   if (!("serviceWorker" in navigator)) {
-    console.error("Service worker not supported");
+    status("service worker support nahi hai", true);
     return;
   }
 
   const permission = await Notification.requestPermission();
   if (permission !== "granted") {
-    console.error(`Push permission not granted: ${permission}`);
+    status(`notification permission nahi mili: ${permission}`, true);
     return;
   }
 
@@ -156,7 +196,7 @@ async function registerWeb(input: PushInput): Promise<void> {
     }
   }
   if (!token) {
-    console.error("Web push: could not get FCM token", lastErr);
+    status(`web token nahi bana: ${String(lastErr).slice(0, 200)}`, true);
     return;
   }
   await sendTokenToServer(token, input);
@@ -176,7 +216,7 @@ export function registerPushToken(input: PushInput): Promise<void> {
         await registerWeb(input);
       }
     } catch (err) {
-      console.error("Push setup error:", err);
+      status(`push setup error: ${String(err).slice(0, 200)}`, true);
     }
   })().finally(() => {
     inflight = null;
