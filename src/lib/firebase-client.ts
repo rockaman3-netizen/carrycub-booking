@@ -14,8 +14,9 @@ const firebaseConfig = {
   appId: "1:1074926867268:web:78324dd7403039dc037d11",
 };
 
+// NOTE: paanchva akshar number ZERO (0) hai, angrezi O nahi.
 const VAPID_KEY =
-  "BL4OOcvKCvKKSERsUVzdTRntbF-t7GIU5c4GzC8bLuu3k8rDcCLxcQqagd5naIGf1jvhVKRaL4NPaq3Wp3Ey3_0";
+  "BL4O0cvKCvKKSERsUVzdTRntbF-t7GIU5c4GzC8bLuu3k8rDcCLxcQqagd5naIGf1jvhVKRaL4NPaq3Wp3Ey3_0";
 
 // Native token fail hone par kitni baar dobara try karna hai
 const MAX_NATIVE_RETRIES = 6;
