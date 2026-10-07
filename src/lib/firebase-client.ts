@@ -1,7 +1,7 @@
 "use client";
 
 import { initializeApp, getApps } from "firebase/app";
-import { getMessaging, getToken, isSupported } from "firebase/messaging";
+import { getMessaging, getToken, isSupported, onMessage, type Messaging } from "firebase/messaging";
 import { Capacitor } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
 
@@ -64,6 +64,102 @@ function status(msg: string, isError = false, hideAfterMs = 0): void {
     // status patti ki wajah se kabhi kuch nahi tootna chahiye
   }
 }
+
+// ---------- Website tone (browser ke Web Audio se, koi audio file nahi) ----------
+
+let audioCtx: AudioContext | null = null;
+let audioHooked = false;
+
+function getAudioCtx(): AudioContext | null {
+  try {
+    if (audioCtx) return audioCtx;
+    const Ctor =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctor) return null;
+    audioCtx = new Ctor();
+    return audioCtx;
+  } catch {
+    return null;
+  }
+}
+
+// Browser tone tabhi bajane deta hai jab page par ek baar tap hua ho.
+function hookAudioUnlock(): void {
+  if (audioHooked || typeof window === "undefined") return;
+  audioHooked = true;
+  const unlock = () => {
+    const ctx = getAudioCtx();
+    if (ctx && ctx.state === "suspended") ctx.resume().catch(() => {});
+  };
+  ["pointerdown", "touchstart", "keydown", "click"].forEach((ev) =>
+    window.addEventListener(ev, unlock, { passive: true }),
+  );
+}
+
+function beep(ctx: AudioContext, start: number, freq: number, dur: number, vol: number): void {
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = "sine";
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(vol, start + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(start);
+  osc.stop(start + dur + 0.05);
+}
+
+// "booking": admin ke liye tez high-pitch 3 baar. "confirm": customer ke liye do sur.
+async function playTone(kind: "booking" | "confirm"): Promise<void> {
+  try {
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    if (ctx.state === "suspended") await ctx.resume();
+    const t = ctx.currentTime + 0.05;
+    if (kind === "booking") {
+      for (let i = 0; i < 3; i++) {
+        beep(ctx, t + i * 0.5, 1320, 0.2, 0.7);
+        beep(ctx, t + i * 0.5 + 0.22, 1760, 0.2, 0.7);
+      }
+    } else {
+      beep(ctx, t, 880, 0.25, 0.6);
+      beep(ctx, t + 0.3, 1320, 0.45, 0.6);
+    }
+    if (typeof navigator !== "undefined" && navigator.vibrate) {
+      navigator.vibrate([200, 100, 200]);
+    }
+  } catch {
+    // tone na baje to bhi kuch nahi tootna chahiye
+  }
+}
+
+// Page khula ho tab message aaye to: tone + notification dikhao.
+let foregroundHooked = false;
+
+function hookForeground(messaging: Messaging, registration: ServiceWorkerRegistration): void {
+  if (foregroundHooked) return;
+  foregroundHooked = true;
+  onMessage(messaging, (payload) => {
+    const title = payload.notification?.title || payload.data?.title || "CarryCub";
+    const body = payload.notification?.body || payload.data?.body || "";
+    const type = payload.data?.type || "";
+    status(`notification mila: ${title}`, false, 6000);
+    void playTone(type === "new_booking" ? "booking" : "confirm");
+    try {
+      registration.showNotification(title, {
+        body,
+        icon: "/icon-192.png",
+        tag: type ? `${type}-${payload.data?.bookingId || ""}` : undefined,
+      });
+    } catch {
+      // notification na dikhe to bhi tone aur patti chalenge
+    }
+  });
+}
+
+// --------------------------------------------------------------------------------
 
 async function sendTokenToServer(token: string, input: PushInput): Promise<void> {
   status("token mila, server ko bhej raha hoon...");
@@ -174,6 +270,8 @@ async function registerWeb(input: PushInput): Promise<void> {
     return;
   }
 
+  hookAudioUnlock();
+
   const permission = await Notification.requestPermission();
   if (permission !== "granted") {
     status(`notification permission nahi mili: ${permission}`, true);
@@ -200,6 +298,8 @@ async function registerWeb(input: PushInput): Promise<void> {
     status(`web token nahi bana: ${String(lastErr).slice(0, 200)}`, true);
     return;
   }
+
+  hookForeground(messaging, registration);
   await sendTokenToServer(token, input);
 }
 
