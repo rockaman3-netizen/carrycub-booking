@@ -88,11 +88,12 @@ export async function POST(req: NextRequest) {
       estimatedFare: fare?.fare ?? null,
     });
 
-    // New booking → notify everyone who has admin/driver push enabled.
+    // New booking → notify ADMIN only. Drivers get their ring only when the
+    // admin assigns them (see bookings/[id]/assign/route.ts).
     // A push failure must never break booking creation, so this is
     // wrapped in its own try/catch and the response goes out regardless.
     try {
-      const tokens = await listTokens(["admin", "driver"]);
+      const tokens = await listTokens(["admin"]);
       if (tokens.length > 0) {
         await sendPushToTokens(
           tokens.map((t) => t.token),
@@ -112,4 +113,4 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });
   }
-}
+  }
