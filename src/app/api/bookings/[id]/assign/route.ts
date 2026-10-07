@@ -19,7 +19,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const result = await assignDriver(normalizeId(id), driver);
     if (result.error) return NextResponse.json({ error: result.error }, { status: 400 });
 
-    // Driver assigned -> data-only high-priority push to that driver's devices.
+    const bookingId = normalizeId(id);
+
+    // 1) Driver ko: data-only high-priority push.
     // Android app (RingService) isse lambi looping ring bajata hai.
     // Never breaks the response if push fails.
     try {
@@ -31,8 +33,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         await sendPushToTokens(
           driverTokens.map((t) => t.token),
           "Naya Trip Assign Hua!",
-          `Booking #${normalizeId(id)} aapko assign hui hai. App kholkar Accept karein.`,
-          { type: "booking_assigned", bookingId: normalizeId(id) },
+          `Booking #${bookingId} aapko assign hui hai. App kholkar Accept karein.`,
+          { type: "booking_assigned", bookingId },
           { channelId: "driver_assign_channel", sound: "driver_ring", dataOnly: true },
         );
       } else {
@@ -40,6 +42,30 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
     } catch (pushErr) {
       console.error("Driver-assign push failed", pushErr);
+    }
+
+    // 2) Customer ko: "booking confirm ho gayi, driver assign hua" notification + tone.
+    // Alag try/catch, taaki iske fail hone par driver ki ring ya response par asar na pade.
+    try {
+      const customerTokens = (await listTokens(["customer"]))
+        .map((t) => t as unknown as { token: string; bookingId?: string | null })
+        .filter((t) => String(t.bookingId ?? "").trim().toUpperCase() === bookingId.toUpperCase());
+      if (customerTokens.length > 0) {
+        const driverName = (driver as unknown as { name?: string }).name;
+        await sendPushToTokens(
+          customerTokens.map((t) => t.token),
+          "Booking Confirm Ho Gayi!",
+          driverName
+            ? `Aapki booking #${bookingId} ke liye driver ${driverName} assign ho gaye hain.`
+            : `Aapki booking #${bookingId} ke liye driver assign ho gaye hain.`,
+          { type: "driver_assigned", bookingId },
+          { channelId: "driver_accept_channel", sound: "notification_sound" },
+        );
+      } else {
+        console.warn(`Customer confirm push skipped: no registered token for booking "${bookingId}"`);
+      }
+    } catch (pushErr) {
+      console.error("Customer confirm push failed", pushErr);
     }
 
     return NextResponse.json({ booking: result.booking });
