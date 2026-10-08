@@ -73,6 +73,14 @@ async function getFcmToken(): Promise<string> {
   return data.access_token;
 }
 
+// Har token ke liye Google ka jawab (diagnostic ke kaam aata hai).
+export type PushResult = {
+  tokenTail: string; // token ke sirf aakhri 8 akshar
+  ok: boolean;
+  status: number;
+  detail: string;
+};
+
 // android options:
 //  - channelId / sound: native Android notification channel + tone.
 //  - dataOnly: true  -> "notification" part NAHI bheja jata. Title/body `data`
@@ -84,15 +92,22 @@ export async function sendPushToTokens(
   body: string,
   data?: Record<string, string>,
   android?: { channelId: string; sound?: string; dataOnly?: boolean },
-): Promise<void> {
-  if (!tokens || tokens.length === 0) return;
+): Promise<PushResult[]> {
+  if (!tokens || tokens.length === 0) return [];
 
   let accessToken: string;
   try {
     accessToken = await getFcmToken();
   } catch (err) {
     console.error("Push notification: could not get access token", err);
-    return;
+    return [
+      {
+        tokenTail: "-",
+        ok: false,
+        status: 0,
+        detail: `auth failed: ${(err as Error).message}`,
+      },
+    ];
   }
 
   const url = `https://fcm.googleapis.com/v1/projects/${projectId()}/messages:send`;
@@ -144,13 +159,20 @@ export async function sendPushToTokens(
     ),
   );
 
+  const out: PushResult[] = [];
   for (let i = 0; i < results.length; i++) {
     const r = results[i];
+    const tokenTail = tokens[i].slice(-8);
     if (r.status === "rejected") {
       console.error(`Push failed for token ${tokens[i]}:`, r.reason);
-    } else if (!r.value.ok) {
+      out.push({ tokenTail, ok: false, status: 0, detail: String(r.reason).slice(0, 300) });
+    } else {
       const text = await r.value.text();
-      console.error(`Push failed (${r.value.status}) for token ${tokens[i]}:`, text);
+      if (!r.value.ok) {
+        console.error(`Push failed (${r.value.status}) for token ${tokens[i]}:`, text);
+      }
+      out.push({ tokenTail, ok: r.value.ok, status: r.value.status, detail: text.slice(0, 300) });
     }
   }
+  return out;
 }
