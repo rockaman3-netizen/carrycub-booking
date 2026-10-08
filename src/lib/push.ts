@@ -4,6 +4,7 @@
 // firebase-admin SDK — works on Cloudflare Workers).
 
 import { SignJWT, importPKCS8 } from "jose";
+import { deleteDeviceToken } from "@/lib/sheets";
 
 function env(name: string): string {
   const v = process.env[name];
@@ -79,6 +80,7 @@ export type PushResult = {
   ok: boolean;
   status: number;
   detail: string;
+  removed?: boolean; // true = token mara hua tha (UNREGISTERED) aur Firestore se delete ho gaya
 };
 
 // android options:
@@ -160,6 +162,7 @@ export async function sendPushToTokens(
   );
 
   const out: PushResult[] = [];
+  const deadIdx: number[] = []; // jin tokens ko Google ne UNREGISTERED bola
   for (let i = 0; i < results.length; i++) {
     const r = results[i];
     const tokenTail = tokens[i].slice(-8);
@@ -168,11 +171,27 @@ export async function sendPushToTokens(
       out.push({ tokenTail, ok: false, status: 0, detail: String(r.reason).slice(0, 300) });
     } else {
       const text = await r.value.text();
+      // Sirf tab "mara hua" maanenge jab status 404 ho AUR jawab me UNREGISTERED likha ho.
+      // (Galat project/URL jaisi galti me token galti se delete na ho.)
+      const isDead = r.value.status === 404 && text.includes("UNREGISTERED");
       if (!r.value.ok) {
         console.error(`Push failed (${r.value.status}) for token ${tokens[i]}:`, text);
       }
+      if (isDead) deadIdx.push(i);
       out.push({ tokenTail, ok: r.value.ok, status: r.value.status, detail: text.slice(0, 300) });
     }
+  }
+
+  // Mare hue tokens Firestore se hata do. Fail ho to bhi push ka kaam nahi rukna chahiye.
+  if (deadIdx.length > 0) {
+    const removal = await Promise.allSettled(deadIdx.map((i) => deleteDeviceToken(tokens[i])));
+    removal.forEach((res, k) => {
+      if (res.status === "fulfilled") {
+        out[deadIdx[k]].removed = true;
+      } else {
+        console.error("Could not delete dead token", res.reason);
+      }
+    });
   }
   return out;
 }
