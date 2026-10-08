@@ -6,10 +6,14 @@ import { sendPushToTokens } from "@/lib/push";
 // TEMPORARY diagnostic page. Kaam hone ke baad ise delete kar dena.
 export const dynamic = "force-dynamic";
 
+const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD ?? "admin123";
+
 export async function GET(req: NextRequest) {
-  if (!isAdminRequest(req)) {
+  // Browser ka seedha link header nahi bhej sakta, isliye ?pw= bhi chalega.
+  const pw = req.nextUrl.searchParams.get("pw");
+  if (!isAdminRequest(req) && pw !== ADMIN_PASSWORD) {
     return NextResponse.json(
-      { error: "Unauthorized. Isi browser me pehle admin login karo, phir ye link dobara kholo." },
+      { error: "Unauthorized. Link ke aakhir me ?pw=APNA_ADMIN_PASSWORD lagao." },
       { status: 401 },
     );
   }
@@ -32,19 +36,23 @@ export async function GET(req: NextRequest) {
       customer: summary.filter((s) => s.role === "customer").length,
     };
 
+    // Test ring: &send=1  (saare driver tokens par) ya &send=1&driverId=XXXX (sirf ek driver par)
     const send = req.nextUrl.searchParams.get("send");
     const driverId = (req.nextUrl.searchParams.get("driverId") || "").trim();
 
-    // Test ring: ?send=1&driverId=XXXX
-    let testResult: unknown = "test ring nahi bheji (link me ?send=1&driverId=... lagao)";
-    if (send === "1" && driverId) {
+    let testResult: unknown = "test ring nahi bheji (link me &send=1 lagao)";
+    if (send === "1") {
       const driverTokens = all
-        .filter((t) => t.role === "driver" && String(t.driverId ?? "").trim() === driverId)
+        .filter(
+          (t) =>
+            t.role === "driver" &&
+            (!driverId || String(t.driverId ?? "").trim() === driverId),
+        )
         .map((t) => String(t.token ?? ""))
         .filter(Boolean);
 
       if (driverTokens.length === 0) {
-        testResult = `driverId "${driverId}" ke liye koi token mila hi nahi`;
+        testResult = "koi driver token mila hi nahi";
       } else {
         const results = await sendPushToTokens(
           driverTokens,
