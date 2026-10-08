@@ -14,6 +14,7 @@ const DEVICE_TOKENS = "device_tokens";
 
 const MAX_BOOKINGS = 200; // listBookings returns the newest N (keeps Firestore reads low)
 const MAX_RETRIES = 5; // retries when two people edit the same booking at once
+const MAX_TOKENS_PER_DRIVER = 3; // ek driver ke sirf sabse naye itne token rakhte hain
 
 export type SheetBooking = {
   id: string;
@@ -558,6 +559,26 @@ function toDeviceToken(d: RawDoc): SheetDeviceToken {
   return decodeDoc(d) as SheetDeviceToken;
 }
 
+// Ek token ka doc delete karta hai. Doc pehle se na ho to bhi koi error nahi.
+// push.ts isse tab bulata hai jab Google bole ki token UNREGISTERED (mara hua) hai.
+export async function deleteDeviceToken(token: string): Promise<void> {
+  const r = await call("DELETE", `${docsUrl()}/${DEVICE_TOKENS}/${encodeURIComponent(token)}`);
+  if (!r.ok && r.status !== 404) fail(`delete ${DEVICE_TOKENS}/${token}`, r);
+}
+
+// Ek driver ke sirf sabse naye MAX_TOKENS_PER_DRIVER token rakhta hai, baaki
+// purane delete kar deta hai. (APK + Chrome dono chal sakte hain, isliye 1 nahi, 3.)
+async function pruneDriverTokens(driverId: string): Promise<void> {
+  const docs = await listAll(DEVICE_TOKENS);
+  const mine = docs
+    .map(toDeviceToken)
+    .filter((t) => t.role === "driver" && t.driverId === driverId)
+    .sort((a, b) => ((a.createdAt || "") < (b.createdAt || "") ? 1 : -1)); // naye pehle
+  for (const old of mine.slice(MAX_TOKENS_PER_DRIVER)) {
+    await deleteDeviceToken(old.token);
+  }
+}
+
 // Registers (or re-registers) a device's push token. Using the token itself
 // as the doc ID means the same device registering again just overwrites its
 // old entry instead of creating duplicates.
@@ -578,6 +599,15 @@ export async function saveDeviceToken(input: {
     fields: encodeFields(data),
   });
   if (!r.ok) fail(`write ${DEVICE_TOKENS}/${input.token}`, r);
+
+  // Driver ke purane tokens saaf karo. Ye fail ho to bhi register fail nahi hona chahiye.
+  if (input.role === "driver" && input.driverId) {
+    try {
+      await pruneDriverTokens(input.driverId);
+    } catch (err) {
+      console.error("pruneDriverTokens failed", err);
+    }
+  }
 }
 
 // Pass roles to filter (e.g. ["admin", "driver"]); omit to get every saved token.
