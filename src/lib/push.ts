@@ -80,7 +80,7 @@ export type PushResult = {
   ok: boolean;
   status: number;
   detail: string;
-  removed?: boolean; // true = token mara hua tha (UNREGISTERED) aur Firestore se delete ho gaya
+  removed?: boolean; // true = mara hua token Sheet se hata diya gaya
 };
 
 // android options:
@@ -88,6 +88,7 @@ export type PushResult = {
 //  - dataOnly: true  -> "notification" part NAHI bheja jata. Title/body `data`
 //    me jate hain, taaki APK ki DriverMessagingService chale aur lambi ring baje.
 // Har Android message high priority ke saath jata hai (sleep mode me bhi turant).
+// Jo token Google ke hisaab se UNREGISTERED (mara hua) hai, wo apne aap delete ho jata hai.
 export async function sendPushToTokens(
   tokens: string[],
   title: string,
@@ -162,35 +163,37 @@ export async function sendPushToTokens(
   );
 
   const out: PushResult[] = [];
-  const deadIdx: number[] = []; // jin tokens ko Google ne UNREGISTERED bola
   for (let i = 0; i < results.length; i++) {
     const r = results[i];
     const tokenTail = tokens[i].slice(-8);
     if (r.status === "rejected") {
       console.error(`Push failed for token ${tokens[i]}:`, r.reason);
       out.push({ tokenTail, ok: false, status: 0, detail: String(r.reason).slice(0, 300) });
-    } else {
-      const text = await r.value.text();
-      // Sirf tab "mara hua" maanenge jab status 404 ho AUR jawab me UNREGISTERED likha ho.
-      // (Galat project/URL jaisi galti me token galti se delete na ho.)
-      const isDead = r.value.status === 404 && text.includes("UNREGISTERED");
-      if (!r.value.ok) {
-        console.error(`Push failed (${r.value.status}) for token ${tokens[i]}:`, text);
-      }
-      if (isDead) deadIdx.push(i);
-      out.push({ tokenTail, ok: r.value.ok, status: r.value.status, detail: text.slice(0, 300) });
+      continue;
     }
-  }
 
-  // Mare hue tokens Firestore se hata do. Fail ho to bhi push ka kaam nahi rukna chahiye.
-  if (deadIdx.length > 0) {
-    const removal = await Promise.allSettled(deadIdx.map((i) => deleteDeviceToken(tokens[i])));
-    removal.forEach((res, k) => {
-      if (res.status === "fulfilled") {
-        out[deadIdx[k]].removed = true;
-      } else {
-        console.error("Could not delete dead token", res.reason);
+    const text = await r.value.text();
+    let removed = false;
+
+    if (!r.value.ok) {
+      console.error(`Push failed (${r.value.status}) for token ${tokens[i]}:`, text);
+      // Mara hua token (app uninstall / purana token): Sheet se hata do.
+      if (r.value.status === 404 && text.includes("UNREGISTERED")) {
+        try {
+          await deleteDeviceToken(tokens[i]);
+          removed = true;
+        } catch (err) {
+          console.error("deleteDeviceToken failed", err);
+        }
       }
+    }
+
+    out.push({
+      tokenTail,
+      ok: r.value.ok,
+      status: r.value.status,
+      detail: text.slice(0, 300),
+      removed,
     });
   }
   return out;
