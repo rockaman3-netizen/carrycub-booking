@@ -8,8 +8,12 @@ export const dynamic = "force-dynamic";
 
 const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD ?? "admin123";
 
+// Links:
+//   ?pw=...                  -> sirf list (kaun se token Sheet me hain)
+//   ?pw=...&send=driver      -> driver tokens par test ring   (send=1 bhi chalega)
+//   ?pw=...&send=admin       -> admin tokens par test notification
+//   ?pw=...&send=customer    -> customer tokens par test notification
 export async function GET(req: NextRequest) {
-  // Browser ka seedha link header nahi bhej sakta, isliye ?pw= bhi chalega.
   const pw = req.nextUrl.searchParams.get("pw");
   if (!isAdminRequest(req) && pw !== ADMIN_PASSWORD) {
     return NextResponse.json(
@@ -27,6 +31,7 @@ export async function GET(req: NextRequest) {
       role: t.role ?? null,
       driverId: t.driverId ?? null,
       bookingId: t.bookingId ?? null,
+      createdAt: t.createdAt ?? null,
       tokenTail: String(t.token ?? "").slice(-8),
     }));
 
@@ -36,32 +41,36 @@ export async function GET(req: NextRequest) {
       customer: summary.filter((s) => s.role === "customer").length,
     };
 
-    // Test ring: &send=1  (saare driver tokens par) ya &send=1&driverId=XXXX (sirf ek driver par)
-    const send = req.nextUrl.searchParams.get("send");
-    const driverId = (req.nextUrl.searchParams.get("driverId") || "").trim();
+    const sendParam = (req.nextUrl.searchParams.get("send") || "").trim();
+    const target = sendParam === "1" ? "driver" : sendParam;
 
-    let testResult: unknown = "test ring nahi bheji (link me &send=1 lagao)";
-    if (send === "1") {
-      const driverTokens = all
-        .filter(
-          (t) =>
-            t.role === "driver" &&
-            (!driverId || String(t.driverId ?? "").trim() === driverId),
-        )
+    let testResult: unknown = "test nahi bheja (link me &send=driver / admin / customer lagao)";
+
+    if (target === "driver" || target === "admin" || target === "customer") {
+      const tokens = all
+        .filter((t) => t.role === target)
         .map((t) => String(t.token ?? ""))
         .filter(Boolean);
 
-      if (driverTokens.length === 0) {
-        testResult = "koi driver token mila hi nahi";
-      } else {
+      if (tokens.length === 0) {
+        testResult = `${target} ka koi token Sheet me mila hi nahi`;
+      } else if (target === "driver") {
         const results = await sendPushToTokens(
-          driverTokens,
+          tokens,
           "TEST: Naya Trip Assign Hua!",
           "Ye test ring hai.",
           { type: "booking_assigned", bookingId: "TEST" },
           { channelId: "driver_assign_channel", sound: "driver_ring", dataOnly: true },
         );
-        testResult = { tokensTried: driverTokens.length, results };
+        testResult = { target, tokensTried: tokens.length, results };
+      } else {
+        const results = await sendPushToTokens(
+          tokens,
+          target === "admin" ? "TEST: New Booking" : "TEST: Booking Confirm Ho Gayi!",
+          "Ye test notification hai.",
+          { type: target === "admin" ? "new_booking" : "driver_assigned", bookingId: "TEST" },
+        );
+        testResult = { target, tokensTried: tokens.length, results };
       }
     }
 
